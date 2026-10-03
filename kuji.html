@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- ★ 1. アプリの名前（ブラウザのタブに表示される名前） -->
+    <title>おだい適当くじ引きアプリ</title>
+    
+    <!-- ★ 2. ブラウザのタブに表示するアイコン（Favicon） -->
+    <link rel="icon" href="./icon.png">
+
+    <!-- ★ 3. スマホのホーム画面に追加したときに表示されるアイコン -->
+    <link rel="apple-touch-icon" href="./icon.png">
+
+    <link rel="stylesheet" href="./sanitize.css">
+    <link rel="stylesheet" href="./main.css">
+    <script src="./jquery-3.7.1.min.js"></script>
+    <script src="./main.js" defer></script>
+</head>
+<body>
+    <div class="app-wrapper">
+        <header class="app-header">
+            <img src="./icon.png" alt="アプリのアイコン" class="app-icon">
+            <h1 class="app-title">ランダムおだいアプリ</h1>
+            <p class="app-subtitle">登録したお題からランダムに1つくじを引きます</p>
+        </header>
+
+        <!-- くじ引き結果表示カード -->
+        <section class="card result-card" aria-live="polite">
+            <span class="card-badge">くじ引き結果</span>
+            <div id="result" class="result-display">ボタンを押してね！</div>
+        </section>
+
+        <!-- くじを引くアクションボタン -->
+        <div class="draw-action">
+            <button id="draw-btn" class="btn btn-primary" onclick="draw()">
+                <span class="btn-symbol">🎲</span> くじを引く！
+            </button>
+        </div>
+
+        <!-- お題設定カード -->
+        <section class="card settings-card">
+            <div class="settings-header">
+                <h2 class="settings-title">おだいリスト</h2>
+                <span id="item-count" class="count-badge">0 個</span>
+            </div>
+            <p class="settings-guide">くじに入れたい単語を、改行して入力してください。<br>（入力すると自動で保存されます）</p>
+            
+            <div class="textarea-wrapper">
+                <textarea id="items" rows="7" placeholder="単語を1行に1つずつ入力してください" oninput="saveItems()"></textarea>
+            </div>
+
+            <div class="settings-actions">
+                <button type="button" class="btn btn-sub" onclick="resetDefault()">初期値に戻す</button>
+                <button type="button" class="btn btn-sub" onclick="clearItems()">クリア</button>
+            </div>
+        </section>
+    </div>
+</body>
+</html>
