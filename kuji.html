@@ -3,58 +3,74 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- ★ 1. アプリの名前（ブラウザのタブに表示される名前） -->
-    <title>おだい適当くじ引きアプリ</title>
+    <title>マイ単語帳 ＆ ランダムくじ</title>
     
-    <!-- ★ 2. ブラウザのタブに表示するアイコン（Favicon） -->
-    <link rel="icon" href="./icon.png">
-
-    <!-- ★ 3. スマホのホーム画面に追加したときに表示されるアイコン -->
-    <link rel="apple-touch-icon" href="./icon.png">
+    <link rel="icon" href="./icon.jpg">
+    <link rel="apple-touch-icon" href="./icon.jpg">
 
     <link rel="stylesheet" href="./sanitize.css">
-    <link rel="stylesheet" href="./main.css">
-    <script src="./jquery-3.7.1.min.js"></script>
-    <script src="./main.js" defer></script>
+    <link rel="stylesheet" href="./main.css?v=11">
+    <script src="./main.js?v=11" defer></script>
 </head>
 <body>
     <div class="app-wrapper">
+        <!-- ヘッダー -->
         <header class="app-header">
-            <img src="./icon.png" alt="アプリのアイコン" class="app-icon">
-            <h1 class="app-title">ランダムおだいアプリ</h1>
-            <p class="app-subtitle">登録したお題からランダムに1つくじを引きます</p>
+            <div class="header-content">
+                <img src="./icon.jpg" alt="アプリアイコン" class="app-icon">
+                <div class="header-text">
+                    <h1 class="app-title">マイ単語帳 & 用語集</h1>
+                    <p class="app-subtitle">登録単語の一覧・検索とランダムくじ引き</p>
+                </div>
+            </div>
+            <div class="header-actions">
+                <a href="./edit.html" class="btn btn-nav">
+                    <span class="btn-symbol">📝</span> 単語を登録・編集
+                </a>
+            </div>
         </header>
 
-        <!-- くじ引き結果表示カード -->
-        <section class="card result-card" aria-live="polite">
-            <span class="card-badge">くじ引き結果</span>
-            <div id="result" class="result-display">ボタンを押してね！</div>
+        <!-- サブ機能: ランダムくじ引きカード（コンパクト設計） -->
+        <section class="card draw-section">
+            <div class="draw-row">
+                <div class="draw-label-wrap">
+                    <span class="sub-badge">🎲 サブ機能</span>
+                    <span class="sub-title">ランダムくじ</span>
+                </div>
+                <button id="draw-btn" class="btn btn-primary btn-draw-compact" onclick="drawWord()">
+                    くじを引く！
+                </button>
+            </div>
+            
+            <div id="draw-result" class="draw-result-box" style="display: none;" aria-live="polite">
+                <div class="result-word-label">選ばれた単語</div>
+                <div id="result-word" class="result-word">？？？</div>
+                <div id="result-meaning" class="result-meaning"></div>
+            </div>
         </section>
 
-        <!-- くじを引くアクションボタン -->
-        <div class="draw-action">
-            <button id="draw-btn" class="btn btn-primary" onclick="draw()">
-                <span class="btn-symbol">🎲</span> くじを引く！
-            </button>
-        </div>
-
-        <!-- お題設定カード -->
-        <section class="card settings-card">
-            <div class="settings-header">
-                <h2 class="settings-title">おだいリスト</h2>
-                <span id="item-count" class="count-badge">0 個</span>
-            </div>
-            <p class="settings-guide">くじに入れたい単語を、改行して入力してください。<br>（入力すると自動で保存されます）</p>
-            
-            <div class="textarea-wrapper">
-                <textarea id="items" rows="7" placeholder="単語を1行に1つずつ入力してください" oninput="saveItems()"></textarea>
+        <!-- メイン機能: 単語一覧・検索 -->
+        <section class="card list-card">
+            <div class="list-header">
+                <div class="list-title-wrap">
+                    <h2 class="card-title">📚 登録単語一覧</h2>
+                    <span id="filtered-count" class="count-badge">0 件</span>
+                </div>
+                <a href="./edit.html" class="link-edit-sub">＋ 一括登録・編集</a>
             </div>
 
-            <div class="settings-actions">
-                <button type="button" class="btn btn-sub" onclick="resetDefault()">初期値に戻す</button>
-                <button type="button" class="btn btn-sub" onclick="clearItems()">クリア</button>
+            <!-- 検索バー -->
+            <div class="search-box">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="search-input" placeholder="単語や意味で検索..." oninput="handleSearch()">
+            </div>
+
+            <!-- 単語カード一覧コンテナ -->
+            <div id="word-list" class="word-list" role="list">
+                <!-- JavaScript で動的に出力 -->
             </div>
         </section>
     </div>
 </body>
+</html>
 </html>
