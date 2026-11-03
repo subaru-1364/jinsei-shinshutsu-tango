@@ -104,39 +104,41 @@ body {
 .auth-bar {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.4rem;
     background: #ffffff;
-    border: 1px solid var(--border-color);
+    border: 1px solid #d4d2c8;
     border-radius: var(--radius-btn);
-    padding: 0.2rem 0.45rem;
+    padding: 0.22rem 0.5rem;
+    box-shadow: 0 1px 0 rgba(24, 24, 27, 0.06);
 }
 
 .sync-status {
     font-size: 0.72rem;
-    font-weight: 500;
+    font-weight: 600;
     color: var(--text-secondary);
     white-space: nowrap;
 }
 
 .sync-status.synced {
-    color: #16a34a;
+    color: #15803d;
 }
 
 .btn-auth {
-    background: #f4f4f5;
+    background: #f4f3ef;
     color: var(--text-primary);
-    border: 1px solid var(--border-color);
+    border: 1px solid #d4d2c8;
     border-radius: 4px;
     padding: 0.22rem 0.55rem;
     font-size: 0.74rem;
     font-weight: 600;
     cursor: pointer;
-    transition: background 0.15s;
+    transition: all 0.15s;
     white-space: nowrap;
 }
 
 .btn-auth:hover {
-    background: #e4e4e7;
+    background: #e7e5de;
+    border-color: #a1a1aa;
 }
 
 .edit-header-top {
@@ -150,43 +152,75 @@ body {
 .btn-nav {
     display: inline-flex;
     align-items: center;
-    padding: 0.45rem 0.85rem;
+    gap: 0.35rem;
+    padding: 0.45rem 0.9rem;
     font-size: 0.82rem;
     font-weight: 600;
     color: #ffffff;
     background: var(--primary-color);
+    border: 1px solid var(--primary-color);
     border-radius: var(--radius-btn);
+    box-shadow: 0 2px 0 #000000;
     text-decoration: none;
-    transition: background 0.15s;
+    transition: all 0.12s;
+}
+
+.icon-line {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    flex-shrink: 0;
+}
+
+.icon-subtle {
+    opacity: 0.7;
 }
 
 .btn-nav:hover {
     background: var(--primary-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 3px 0 #000000;
 }
 
-/* カード共通スタイル（コンパクト化） */
+.btn-nav:active {
+    transform: translateY(1px);
+    box-shadow: 0 1px 0 #000000;
+}
+
+/* カード共通スタイル */
 .card {
     background: var(--card-bg);
     border-radius: var(--radius-card);
-    border: 1px solid var(--border-color);
-    box-shadow: var(--card-shadow);
-    padding: 0.95rem 1.1rem;
+    border: 1px solid #d4d2c8;
+    box-shadow: 0 3px 0 rgba(24, 24, 27, 0.06), 0 4px 12px rgba(24, 24, 27, 0.03);
+    padding: 1rem 1.15rem;
 }
 
 .card-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
     font-size: 0.95rem;
     font-weight: 700;
     color: var(--text-primary);
     margin: 0;
+    letter-spacing: 0.01em;
 }
 
-/* ランダムピックアップ（シンプルな1行バー設計） */
+/* ランダムピックアップ（主張を抑えた控えめなサブバー設計） */
 .draw-section {
-    background: #ffffff;
+    background: #faf9f5;
+    border: 1px dashed #ccc9be;
+    box-shadow: none;
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
-    padding: 0.75rem 1.1rem;
+    gap: 0.55rem;
+    padding: 0.55rem 0.95rem;
+    position: relative;
 }
 
 .draw-row {
@@ -196,34 +230,45 @@ body {
 }
 
 .sub-title {
-    font-size: 0.85rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.38rem;
+    font-size: 0.8rem;
     font-weight: 600;
     color: var(--text-secondary);
 }
 
 .btn-draw-compact {
     width: auto !important;
-    padding: 0.38rem 0.9rem !important;
-    font-size: 0.82rem !important;
+    padding: 0.3rem 0.85rem !important;
+    font-size: 0.78rem !important;
     font-weight: 600;
     color: var(--text-primary);
-    background: #f4f4f5;
-    border: 1px solid var(--border-color);
+    background: #ffffff;
+    border: 1px solid #c8c5b9;
     border-radius: var(--radius-btn);
+    box-shadow: 0 1px 0 rgba(24, 24, 27, 0.08);
     cursor: pointer;
-    transition: background 0.15s;
+    transition: all 0.12s;
 }
 
 .btn-draw-compact:hover:not(:disabled) {
-    background: #e4e4e7;
+    background: #f4f3ef;
+    border-color: var(--text-primary);
+}
+
+.btn-draw-compact:active:not(:disabled) {
+    transform: translateY(1px);
+    box-shadow: none;
 }
 
 .draw-result-box {
-    background: #fafafa;
-    border: 1px solid var(--border-color);
+    background: #ffffff;
+    border: 1px solid #dcdad0;
+    border-left: 3px solid var(--accent-vermilion);
     border-radius: 6px;
-    padding: 0.65rem 0.9rem;
-    text-align: center;
+    padding: 0.55rem 0.85rem;
+    text-align: left;
 }
 
 .draw-result-box.popping {
@@ -231,19 +276,18 @@ body {
 }
 
 .result-word {
-    font-size: 1.3rem;
+    font-size: 1.15rem;
     font-weight: 700;
     color: var(--text-primary);
     line-height: 1.3;
 }
 
 .result-meaning {
-    font-size: 0.84rem;
+    font-size: 0.82rem;
     color: var(--text-secondary);
     line-height: 1.45;
-    margin-top: 0.25rem;
-    display: inline-block;
-    max-width: 100%;
+    margin-top: 0.2rem;
+    display: block;
 }
 
 .result-meaning:empty {
@@ -254,61 +298,86 @@ body {
 .list-card {
     display: flex;
     flex-direction: column;
-    gap: 0.7rem;
+    gap: 0.75rem;
 }
 
 .list-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #eceae2;
 }
 
 .list-title-wrap {
     display: flex;
     align-items: center;
-    gap: 0.45rem;
+    gap: 0.5rem;
 }
 
 .count-badge {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--text-secondary);
-    background-color: #f4f4f5;
-    padding: 0.1rem 0.45rem;
+    font-size: 0.73rem;
+    font-weight: 700;
+    color: #f4f3ef;
+    background-color: var(--primary-color);
+    padding: 0.1rem 0.5rem;
     border-radius: 4px;
+    letter-spacing: 0.02em;
 }
 
 /* 検索ボックス */
+.search-box {
+    position: relative;
+}
+
+.search-svg {
+    position: absolute;
+    left: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: var(--text-muted);
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    pointer-events: none;
+}
+
 .search-box input {
     width: 100%;
-    padding: 0.5rem 0.75rem;
+    padding: 0.52rem 0.8rem 0.52rem 2.1rem;
     font-family: inherit;
     font-size: 0.86rem;
-    border: 1px solid var(--border-color);
+    border: 1px solid #d4d2c8;
     border-radius: 6px;
-    background-color: #fafafa;
-    transition: border-color 0.15s, background-color 0.15s;
+    background-color: #f9f8f5;
+    box-shadow: inset 0 1px 2px rgba(24, 24, 27, 0.03);
+    transition: all 0.15s;
 }
 
 .search-box input:focus {
     background-color: #ffffff;
     border-color: var(--text-primary);
+    box-shadow: 0 0 0 2px rgba(24, 24, 27, 0.08);
     outline: none;
 }
 
-/* 単語カードリスト */
+/* 単語カードリスト（インデックスカード風デザイン） */
 .word-list {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 0.55rem;
+    gap: 0.6rem;
 }
 
 .word-card {
     background-color: #ffffff;
-    border: 1px solid var(--border-color);
+    border: 1px solid #dcdad0;
+    border-left: 3px solid #18181b;
     border-radius: 6px;
-    padding: 0.65rem 0.8rem;
-    transition: border-color 0.15s;
+    padding: 0.65rem 0.85rem;
+    box-shadow: 0 2px 0 rgba(24, 24, 27, 0.04);
+    transition: all 0.15s ease;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -316,7 +385,10 @@ body {
 }
 
 .word-card:hover {
-    border-color: #a1a1aa;
+    border-color: #b8b5a8;
+    border-left-color: var(--accent-vermilion);
+    transform: translateY(-1px);
+    box-shadow: 0 3px 0 rgba(24, 24, 27, 0.07), 0 4px 10px rgba(24, 24, 27, 0.04);
 }
 
 .word-card-top {
@@ -366,9 +438,11 @@ body {
 .word-desc {
     font-size: 0.82rem;
     color: var(--text-secondary);
-    line-height: 1.4;
+    line-height: 1.45;
     word-break: break-word;
-    margin: 0;
+    margin: 0.2rem 0 0;
+    padding-top: 0.35rem;
+    border-top: 1px dashed #e5e3dc;
 }
 
 .word-card-footer {

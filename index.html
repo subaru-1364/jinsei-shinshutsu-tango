@@ -8,7 +8,7 @@
     <link rel="icon" type="image/png" href="./assets/icon.png?v=6">
     <link rel="apple-touch-icon" href="./assets/icon.png?v=6">
 
-    <link rel="stylesheet" href="./assets/main.css?v=16">
+    <link rel="stylesheet" href="./assets/main.css?v=19">
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js" defer></script>
@@ -28,14 +28,20 @@
                     <span id="sync-status" class="sync-status">未同期</span>
                     <button type="button" id="auth-btn" class="btn-auth" onclick="handleAuthClick()">Google同期</button>
                 </div>
-                <a href="./edit.html" class="btn btn-nav">単語を登録・編集</a>
+                <a href="./edit.html" class="btn btn-nav">
+                    <svg class="icon-line" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.2v9.6M3.2 8h9.6"/></svg>
+                    単語を登録・編集
+                </a>
             </div>
         </header>
 
         <!-- ランダムくじ引き -->
         <section class="card draw-section">
             <div class="draw-row">
-                <span class="sub-title">ランダムピックアップ</span>
+                <span class="sub-title">
+                    <svg class="icon-line icon-subtle" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 5.5h8.5l-2-2M13.5 10.5H5l2 2"/></svg>
+                    ランダムピックアップ
+                </span>
                 <button id="draw-btn" class="btn btn-primary btn-draw-compact" onclick="drawWord()">
                     引く
                 </button>
@@ -51,13 +57,17 @@
         <section class="card list-card">
             <div class="list-header">
                 <div class="list-title-wrap">
-                    <h2 class="card-title">登録単語</h2>
+                    <h2 class="card-title">
+                        <svg class="icon-line" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M5.5 6.5h5M5.5 9.5h3"/></svg>
+                        登録単語
+                    </h2>
                     <span id="filtered-count" class="count-badge">0 件</span>
                 </div>
             </div>
 
             <!-- 検索バー -->
             <div class="search-box">
+                <svg class="search-svg" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2L13.5 13.5"/></svg>
                 <input type="text" id="search-input" placeholder="検索..." oninput="handleSearch()">
             </div>
 

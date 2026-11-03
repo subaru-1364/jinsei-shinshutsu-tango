@@ -8,7 +8,7 @@
     <link rel="icon" type="image/png" href="./assets/icon.png?v=6">
     <link rel="apple-touch-icon" href="./assets/icon.png?v=6">
 
-    <link rel="stylesheet" href="./assets/main.css?v=16">
+    <link rel="stylesheet" href="./assets/main.css?v=19">
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js" defer></script>
@@ -16,18 +16,23 @@
 </head>
 <body>
     <div class="app-wrapper">
-        <!-- ナビゲーションヘッダー -->
-        <header class="app-header header-edit-page">
-            <div class="edit-header-top">
-                <a href="./index.html" class="btn-back">
-                    ← 一覧に戻る
-                </a>
+        <!-- ヘッダー -->
+        <header class="app-header">
+            <div class="header-content">
+                <div class="header-text">
+                    <h1 class="app-title">単語を登録・編集</h1>
+                </div>
+            </div>
+            <div class="header-actions">
                 <div id="auth-bar" class="auth-bar">
                     <span id="sync-status" class="sync-status">未同期</span>
                     <button type="button" id="auth-btn" class="btn-auth" onclick="handleAuthClick()">Google同期</button>
                 </div>
+                <a href="./index.html" class="btn btn-nav">
+                    <svg class="icon-line" viewBox="0 0 16 16" aria-hidden="true"><path d="M12.5 8H3.5M7 4.5L3.5 8 7 11.5"/></svg>
+                    一覧に戻る
+                </a>
             </div>
-            <h1 class="app-title">単語を登録・編集</h1>
         </header>
 
         <!-- 登録・編集カード -->
@@ -42,9 +47,6 @@
             </div>
 
             <div class="editor-page-actions">
-                <a href="./index.html" class="btn btn-primary btn-save-return">
-                    一覧に戻る
-                </a>
                 <div class="editor-sub-btns">
                     <button type="button" class="btn btn-sub" onclick="resetDefaultWords()">初期データ</button>
                     <button type="button" class="btn btn-sub" onclick="clearAllWords()">全消去</button>
