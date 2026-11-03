@@ -24,7 +24,7 @@
 
 | 区分 | 技術 / ファイル | 役割・バージョン |
 | :--- | :--- | :--- |
-| **マークアップ** | HTML5 (`kuji.html`) | アプリケーション構造定義、セマンティックタグ、Viewport設定 |
+| **マークアップ** | HTML5 (`index.html`, `edit.html`) | アプリケーション構造定義、セマンティックタグ、Viewport設定 |
 | **スタイル** | CSS3 (`main.css`) | カードUI、CSSカスタムプロパティ、アニメーション、レスポンシブ |
 | **リセットCSS** | CSS (`sanitize.css`) | ブラウザ標準スタイルの均一化 |
 | **ロジック** | JavaScript (`main.js`) | 抽選処理、ルーレット演出、データ永続化、件数カウント |
@@ -42,7 +42,8 @@
 
 ```text
 kuji-app/
-├── kuji.html           # メインHTMLファイル
+├── index.html          # メインHTMLファイル（単語一覧・検索・くじ）
+├── edit.html           # 単語登録・編集HTMLファイル
 ├── main.css            # アプリケーション専用CSS
 ├── main.js             # アプリケーション専用JavaScript
 ├── sanitize.css        # スタイルリセットCSS

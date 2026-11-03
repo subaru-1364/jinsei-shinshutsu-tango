@@ -50,7 +50,7 @@ function refreshUI() {
         updateWordCountBadge(wordList.length);
     }
 
-    // 一覧画面（kuji.html）の場合
+    // 一覧画面（index.html）の場合
     var wordListContainer = document.getElementById("word-list");
     if (wordListContainer) {
         var searchInput = document.getElementById("search-input");
