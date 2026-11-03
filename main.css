@@ -75,6 +75,60 @@ body {
     margin: 0.1rem 0 0;
 }
 
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.auth-bar {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: #ffffff;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-btn);
+    padding: 0.25rem 0.5rem;
+}
+
+.sync-status {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.sync-status.synced {
+    color: #059669;
+}
+
+.btn-auth {
+    background: #eff6ff;
+    color: var(--primary-color);
+    border: 1px solid #bfdbfe;
+    border-radius: 6px;
+    padding: 0.25rem 0.55rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.btn-auth:hover {
+    background: #dbeafe;
+}
+
+.edit-header-top {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
 .btn-nav {
     display: inline-flex;
     align-items: center;

@@ -9,8 +9,11 @@
     <link rel="apple-touch-icon" href="./icon.jpg">
 
     <link rel="stylesheet" href="./sanitize.css">
-    <link rel="stylesheet" href="./main.css?v=11">
-    <script src="./main.js?v=11" defer></script>
+    <link rel="stylesheet" href="./main.css?v=12">
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js" defer></script>
+    <script src="./main.js?v=12" defer></script>
 </head>
 <body>
     <div class="app-wrapper">
@@ -24,6 +27,10 @@
                 </div>
             </div>
             <div class="header-actions">
+                <div id="auth-bar" class="auth-bar">
+                    <span id="sync-status" class="sync-status">端末内保存</span>
+                    <button type="button" id="auth-btn" class="btn-auth" onclick="handleAuthClick()">☁️ Google同期</button>
+                </div>
                 <a href="./edit.html" class="btn btn-nav">
                     <span class="btn-symbol">📝</span> 単語を登録・編集
                 </a>
@@ -72,5 +79,4 @@
         </section>
     </div>
 </body>
-</html>
 </html>

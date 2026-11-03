@@ -9,20 +9,44 @@ let wordList = [];
 let isDrawing = false;
 let editingWordId = null;
 
+// Firebase 設定・同期用変数
+const firebaseConfig = {
+    apiKey: "AIzaSyAL_BJS66V2_LK7v_IyG1RlX5QohsfaoOw",
+    authDomain: "jinsei-tango-a3d1e.firebaseapp.com",
+    databaseURL: "https://jinsei-tango-a3d1e-default-rtdb.firebaseio.com",
+    projectId: "jinsei-tango-a3d1e",
+    storageBucket: "jinsei-tango-a3d1e.firebasestorage.app",
+    messagingSenderId: "481947502597",
+    appId: "1:481947502597:web:5ab8bc4f33fe0ae2c7346c",
+    measurementId: "G-5N9QWBP59C"
+};
+
+let fbAuth = null;
+let fbDb = null;
+let currentUser = null;
+let activeDbRef = null;
+let cloudSaveTimer = null;
+
 // ① ページ読み込み時の初期化
 window.addEventListener("DOMContentLoaded", function() {
     initApp();
+    initFirebase();
 });
 
 function initApp() {
     recoverOriginalUserData(); // ユーザーの元データを最優先で救出・復元
     syncWordList();
+    refreshUI();
+}
 
+function refreshUI() {
     // 編集画面（edit.html）の場合
     var textarea = document.getElementById("bulk-input");
     if (textarea) {
         var saved = localStorage.getItem("kuji_bulk_text") || localStorage.getItem("kuji_items") || "";
-        textarea.value = saved;
+        if (document.activeElement !== textarea || textarea.value !== saved) {
+            textarea.value = saved;
+        }
         updateWordCountBadge(wordList.length);
     }
 
@@ -33,6 +57,140 @@ function initApp() {
         var keyword = searchInput ? searchInput.value : "";
         renderWordCards(keyword);
     }
+}
+
+// ローカル保存＋クラウド同期の一括ヘルパー
+function saveBulkText(newText, debounceCloud) {
+    localStorage.setItem("kuji_bulk_text", newText);
+    localStorage.setItem("kuji_items", newText);
+    syncWordList();
+
+    if (currentUser && fbDb) {
+        updateSyncStatus("同期中...", true);
+        if (cloudSaveTimer) clearTimeout(cloudSaveTimer);
+        var delay = debounceCloud ? 600 : 0;
+        cloudSaveTimer = setTimeout(function() {
+            fbDb.ref("users/" + currentUser.uid).set({
+                bulkText: newText,
+                updatedAt: firebase.database.ServerValue.TIMESTAMP
+            }).then(function() {
+                updateSyncStatus("☁️ 同期済み", true);
+            }).catch(function(err) {
+                console.error("Cloud save error:", err);
+                updateSyncStatus("⚠️ 同期エラー", false);
+            });
+        }, delay);
+    }
+}
+
+// Firebase 初期化とログイン監視
+function initFirebase() {
+    if (typeof firebase === "undefined") return;
+    try {
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        fbAuth = firebase.auth();
+        fbDb = firebase.database();
+
+        fbAuth.onAuthStateChanged(function(user) {
+            currentUser = user;
+            if (user) {
+                updateAuthUI(user);
+                startCloudSync(user);
+            } else {
+                if (activeDbRef) {
+                    activeDbRef.off();
+                    activeDbRef = null;
+                }
+                updateAuthUI(null);
+            }
+        });
+    } catch (e) {
+        console.error("Firebase init error:", e);
+    }
+}
+
+function updateAuthUI(user) {
+    var statusEl = document.getElementById("sync-status");
+    var btnEl = document.getElementById("auth-btn");
+    if (!statusEl || !btnEl) return;
+
+    if (user) {
+        statusEl.textContent = "☁️ 同期中";
+        statusEl.classList.add("synced");
+        btnEl.textContent = "ログアウト";
+    } else {
+        statusEl.textContent = "端末内保存";
+        statusEl.classList.remove("synced");
+        btnEl.textContent = "☁️ Google同期";
+    }
+}
+
+function updateSyncStatus(text, isSynced) {
+    var statusEl = document.getElementById("sync-status");
+    if (!statusEl) return;
+    statusEl.textContent = text;
+    if (isSynced) {
+        statusEl.classList.add("synced");
+    } else {
+        statusEl.classList.remove("synced");
+    }
+}
+
+function handleAuthClick() {
+    if (!fbAuth) {
+        alert("Firebaseの読み込み中です。少し待ってからもう一度お試しください。");
+        return;
+    }
+    if (currentUser) {
+        if (confirm("Google同期からログアウトしますか？\n（端末内の単語データはそのまま残ります）")) {
+            fbAuth.signOut();
+        }
+    } else {
+        var provider = new firebase.auth.GoogleAuthProvider();
+        fbAuth.signInWithPopup(provider).catch(function(err) {
+            if (err.code === "auth/unauthorized-domain" || err.code === "auth/operation-not-supported-in-this-environment") {
+                alert("現在の開き方（file:// など）ではGoogleログインのポップアップが制限されています。\nGitHub PagesのURL（https://...）またはローカルサーバーから開くとログインできます！");
+            } else if (err.code !== "auth/popup-closed-by-user") {
+                alert("ログインエラー: " + err.message);
+            }
+        });
+    }
+}
+
+function startCloudSync(user) {
+    if (!fbDb) return;
+    if (activeDbRef) activeDbRef.off();
+
+    activeDbRef = fbDb.ref("users/" + user.uid);
+    activeDbRef.on("value", function(snapshot) {
+        var localText = localStorage.getItem("kuji_bulk_text") || "";
+        if (snapshot.exists()) {
+            var data = snapshot.val();
+            var cloudText = (data && typeof data.bulkText === "string") ? data.bulkText : "";
+
+            // クラウドが空でローカルにデータがある場合はローカルをクラウドへアップロード
+            if (!cloudText.trim() && localText.trim()) {
+                saveBulkText(localText, false);
+                return;
+            }
+
+            if (cloudText !== localText) {
+                localStorage.setItem("kuji_bulk_text", cloudText);
+                localStorage.setItem("kuji_items", cloudText);
+                syncWordList();
+                refreshUI();
+            }
+            updateSyncStatus("☁️ 同期済み", true);
+        } else {
+            // 初回ログイン時：現在のローカルデータをクラウドに保存
+            saveBulkText(localText, false);
+        }
+    }, function(err) {
+        console.error("Snapshot error:", err);
+        updateSyncStatus("⚠️ 権限/設定確認", false);
+    });
 }
 
 // ② ユーザーが保存していた元データ（kuji_items）を絶対に失わせず最優先で復旧する
@@ -132,8 +290,7 @@ function handleBulkInput() {
     var textarea = document.getElementById("bulk-input");
     if (!textarea) return;
 
-    localStorage.setItem("kuji_bulk_text", textarea.value);
-    syncWordList();
+    saveBulkText(textarea.value, true);
     updateWordCountBadge(wordList.length);
 }
 
@@ -165,50 +322,133 @@ function renderWordCards(filterKeyword) {
     }
 
     if (displayList.length === 0) {
+        container.textContent = "";
+        var emptyDiv = document.createElement("div");
+        emptyDiv.className = "empty-state";
         if (filterKeyword) {
-            container.innerHTML = '<div class="empty-state">「' + escapeHtml(filterKeyword) + '」に一致する単語は見つかりませんでした</div>';
+            emptyDiv.textContent = "「" + filterKeyword + "」に一致する単語は見つかりませんでした";
         } else {
-            container.innerHTML = '<div class="empty-state">登録されている単語がありません。<br><a href="./edit.html" class="link-add-empty">📝 単語を登録する</a></div>';
+            emptyDiv.appendChild(document.createTextNode("登録されている単語がありません。"));
+            emptyDiv.appendChild(document.createElement("br"));
+            var addLink = document.createElement("a");
+            addLink.href = "./edit.html";
+            addLink.className = "link-add-empty";
+            addLink.textContent = "📝 単語を登録する";
+            emptyDiv.appendChild(addLink);
         }
+        container.appendChild(emptyDiv);
         return;
     }
 
-    var html = "";
+    container.textContent = "";
+    var fragment = document.createDocumentFragment();
+
     displayList.forEach(function(item) {
         var isEditing = (editingWordId === item.id);
         var hasMeaning = (item.meaning && item.meaning.trim() !== "");
 
-        html += '<div class="word-card" id="card-' + item.id + '">';
-        html += '  <div class="word-card-top">';
-        html += '    <span class="word-term">' + escapeHtml(item.word) + '</span>';
-        html += '    <div class="card-actions">';
+        var card = document.createElement("div");
+        card.className = "word-card";
+        card.id = "card-" + item.id;
+
+        var top = document.createElement("div");
+        top.className = "word-card-top";
+
+        var term = document.createElement("span");
+        term.className = "word-term";
+        term.textContent = item.word;
+        top.appendChild(term);
+
+        var actions = document.createElement("div");
+        actions.className = "card-actions";
+
         if (hasMeaning && !isEditing) {
-            html += '      <button type="button" class="btn-card-action" onclick="startInlineEdit(\'' + item.id + '\')" title="意味を編集">✏️</button>';
+            var editBtn = document.createElement("button");
+            editBtn.type = "button";
+            editBtn.className = "btn-card-action";
+            editBtn.title = "意味を編集";
+            editBtn.textContent = "✏️";
+            editBtn.addEventListener("click", function() {
+                startInlineEdit(item.id);
+            });
+            actions.appendChild(editBtn);
         }
-        html += '      <button type="button" class="btn-card-action btn-card-delete" onclick="deleteWordFromText(\'' + escapeJs(item.word) + '\')" title="削除">🗑️</button>';
-        html += '    </div>';
-        html += '  </div>';
+
+        var delBtn = document.createElement("button");
+        delBtn.type = "button";
+        delBtn.className = "btn-card-action btn-card-delete";
+        delBtn.title = "削除";
+        delBtn.textContent = "🗑️";
+        delBtn.addEventListener("click", function() {
+            deleteWordFromText(item.word);
+        });
+        actions.appendChild(delBtn);
+
+        top.appendChild(actions);
+        card.appendChild(top);
 
         if (isEditing) {
-            html += '  <div class="inline-edit-box">';
-            html += '    <input type="text" id="inline-input-' + item.id + '" class="inline-edit-input" placeholder="意味・メモを入力..." value="' + escapeHtml(item.meaning) + '" onkeydown="handleInlineKey(event, \'' + item.id + '\', \'' + escapeJs(item.word) + '\')">';
-            html += '    <div class="inline-edit-btns">';
-            html += '      <button type="button" class="btn-inline-cancel" onclick="cancelInlineEdit()">キャンセル</button>';
-            html += '      <button type="button" class="btn-inline-save" onclick="saveInlineMeaning(\'' + item.id + '\', \'' + escapeJs(item.word) + '\')">保存</button>';
-            html += '    </div>';
-            html += '  </div>';
+            var editBox = document.createElement("div");
+            editBox.className = "inline-edit-box";
+
+            var input = document.createElement("input");
+            input.type = "text";
+            input.id = "inline-input-" + item.id;
+            input.className = "inline-edit-input";
+            input.placeholder = "意味・メモを入力...";
+            input.value = item.meaning;
+            input.addEventListener("keydown", function(event) {
+                handleInlineKey(event, item.id, item.word);
+            });
+            editBox.appendChild(input);
+
+            var btns = document.createElement("div");
+            btns.className = "inline-edit-btns";
+
+            var cancelBtn = document.createElement("button");
+            cancelBtn.type = "button";
+            cancelBtn.className = "btn-inline-cancel";
+            cancelBtn.textContent = "キャンセル";
+            cancelBtn.addEventListener("click", function() {
+                cancelInlineEdit();
+            });
+            btns.appendChild(cancelBtn);
+
+            var saveBtn = document.createElement("button");
+            saveBtn.type = "button";
+            saveBtn.className = "btn-inline-save";
+            saveBtn.textContent = "保存";
+            saveBtn.addEventListener("click", function() {
+                saveInlineMeaning(item.id, item.word);
+            });
+            btns.appendChild(saveBtn);
+
+            editBox.appendChild(btns);
+            card.appendChild(editBox);
         } else if (hasMeaning) {
-            html += '  <p class="word-desc">' + escapeHtml(item.meaning) + '</p>';
+            var desc = document.createElement("p");
+            desc.className = "word-desc";
+            desc.textContent = item.meaning;
+            card.appendChild(desc);
         } else {
-            html += '  <div class="word-card-footer">';
-            html += '    <button type="button" class="btn-add-meaning" onclick="startInlineEdit(\'' + item.id + '\')">＋ 意味を追加</button>';
-            html += '  </div>';
+            var footer = document.createElement("div");
+            footer.className = "word-card-footer";
+
+            var addMeaningBtn = document.createElement("button");
+            addMeaningBtn.type = "button";
+            addMeaningBtn.className = "btn-add-meaning";
+            addMeaningBtn.textContent = "＋ 意味を追加";
+            addMeaningBtn.addEventListener("click", function() {
+                startInlineEdit(item.id);
+            });
+            footer.appendChild(addMeaningBtn);
+            card.appendChild(footer);
         }
 
-        html += '</div>';
+        fragment.appendChild(card);
     });
 
-    container.innerHTML = html;
+    container.appendChild(fragment);
 
     if (editingWordId) {
         var editInput = document.getElementById("inline-input-" + editingWordId);
@@ -274,8 +514,7 @@ function saveInlineMeaning(id, targetWord) {
     }
 
     if (updated) {
-        localStorage.setItem("kuji_bulk_text", lines.join("\n"));
-        syncWordList();
+        saveBulkText(lines.join("\n"), false);
     }
 
     editingWordId = null;
@@ -302,8 +541,7 @@ function deleteWordFromText(targetWord) {
         return word !== targetWord;
     });
 
-    localStorage.setItem("kuji_bulk_text", newLines.join("\n"));
-    syncWordList();
+    saveBulkText(newLines.join("\n"), false);
 
     // 編集画面の場合
     var textarea = document.getElementById("bulk-input");
@@ -328,8 +566,7 @@ function handleSearch() {
 // ⑩ 初期データに戻す
 function resetDefaultWords() {
     if (confirm("単語一覧を初期サンプルデータに戻しますか？\n（現在の登録内容は上書きされます）")) {
-        localStorage.setItem("kuji_bulk_text", DEFAULT_BULK_TEXT);
-        syncWordList();
+        saveBulkText(DEFAULT_BULK_TEXT, false);
 
         var textarea = document.getElementById("bulk-input");
         if (textarea) {
@@ -344,8 +581,7 @@ function resetDefaultWords() {
 // ⑪ すべてクリア
 function clearAllWords() {
     if (confirm("登録されている単語をすべて消去しますか？")) {
-        localStorage.setItem("kuji_bulk_text", "");
-        syncWordList();
+        saveBulkText("", false);
 
         var textarea = document.getElementById("bulk-input");
         if (textarea) {
@@ -424,20 +660,4 @@ function setDrawResult(selected) {
         resultMeaning.innerText = "";
         resultMeaning.style.display = "none";
     }
-}
-
-// 補助関数
-function escapeHtml(str) {
-    if (!str) return "";
-    return str
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-}
-
-function escapeJs(str) {
-    if (!str) return "";
-    return str.replace(/'/g, "\\'").replace(/"/g, '\\"');
 }

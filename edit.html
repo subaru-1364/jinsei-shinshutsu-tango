@@ -9,16 +9,25 @@
     <link rel="apple-touch-icon" href="./icon.jpg">
 
     <link rel="stylesheet" href="./sanitize.css">
-    <link rel="stylesheet" href="./main.css?v=11">
-    <script src="./main.js?v=11" defer></script>
+    <link rel="stylesheet" href="./main.css?v=12">
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js" defer></script>
+    <script src="./main.js?v=12" defer></script>
 </head>
 <body>
     <div class="app-wrapper">
         <!-- ナビゲーションヘッダー -->
         <header class="app-header header-edit-page">
-            <a href="./kuji.html" class="btn-back">
-                ← 単語一覧に戻る
-            </a>
+            <div class="edit-header-top">
+                <a href="./kuji.html" class="btn-back">
+                    ← 単語一覧に戻る
+                </a>
+                <div id="auth-bar" class="auth-bar">
+                    <span id="sync-status" class="sync-status">端末内保存</span>
+                    <button type="button" id="auth-btn" class="btn-auth" onclick="handleAuthClick()">☁️ Google同期</button>
+                </div>
+            </div>
             <h1 class="app-title">📝 単語の一括登録・編集</h1>
             <p class="app-subtitle">単語を改行区切りでまとめて入力・編集できます</p>
         </header>
