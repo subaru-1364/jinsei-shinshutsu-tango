@@ -566,26 +566,35 @@ body {
 
 .quick-add-box {
     display: flex;
-    align-items: center;
-    gap: 0.45rem;
-    padding-bottom: 0.55rem;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding-bottom: 0.65rem;
     border-bottom: 1px dashed #e2e0d8;
 }
 
-.quick-add-box input {
-    flex: 1;
-    min-width: 0;
-    padding: 0.5rem 0.7rem;
+.quick-add-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.quick-add-box textarea {
+    width: 100%;
+    padding: 0.55rem 0.7rem;
     font-family: inherit;
     font-size: 0.9rem;
+    line-height: 1.5;
     color: var(--text-primary);
     background-color: #f9f8f5;
     border: 1px solid #d4d2c8;
     border-radius: 6px;
+    resize: vertical;
+    min-height: 68px;
     transition: all 0.15s;
 }
 
-.quick-add-box input:focus {
+.quick-add-box textarea:focus {
     background-color: #ffffff;
     border-color: var(--text-primary);
     box-shadow: 0 0 0 2px rgba(24, 24, 27, 0.08);
@@ -594,9 +603,9 @@ body {
 
 .btn-quick-add {
     flex-shrink: 0;
-    padding: 0.5rem 0.9rem;
+    padding: 0.35rem 0.85rem;
     font-family: inherit;
-    font-size: 0.84rem;
+    font-size: 0.8rem;
     font-weight: 600;
     color: #ffffff;
     background-color: var(--primary-color);
@@ -622,6 +631,29 @@ body {
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
+}
+
+.editor-header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.btn-jump-bottom {
+    background: #f4f3ef;
+    color: var(--text-primary);
+    border: 1px solid #d4d2c8;
+    border-radius: 4px;
+    padding: 0.18rem 0.5rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 0.15s;
+}
+
+.btn-jump-bottom:hover {
+    background: #e7e5de;
 }
 
 .editor-guide {
@@ -670,20 +702,51 @@ textarea#bulk-input:focus {
     flex-wrap: wrap;
 }
 
-.btn-save-return {
-    display: inline-flex;
+.save-action-group {
+    display: flex;
     align-items: center;
-    text-decoration: none;
-    padding: 0.5rem 1.1rem;
-    font-size: 0.84rem;
-    font-weight: 600;
-    color: #ffffff;
-    background: var(--primary-color);
-    border-radius: var(--radius-btn);
+    gap: 0.6rem;
 }
 
-.btn-save-return:hover {
-    background: var(--primary-hover);
+.btn-save-explicit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 1.25rem;
+    font-family: inherit;
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: #ffffff;
+    background-color: var(--primary-color);
+    border: 1px solid #09090b;
+    border-radius: var(--radius-btn);
+    cursor: pointer;
+    box-shadow: 0 2px 0 #09090b;
+    transition: all 0.15s;
+}
+
+.btn-save-explicit:hover {
+    background-color: var(--primary-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 3px 0 #09090b;
+}
+
+.btn-save-explicit:active {
+    transform: translateY(1px);
+    box-shadow: none;
+}
+
+.save-feedback {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #15803d;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+}
+
+.save-feedback.visible {
+    opacity: 1;
 }
 
 .editor-sub-btns {

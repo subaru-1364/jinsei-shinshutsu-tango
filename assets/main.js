@@ -95,23 +95,58 @@ function pushLocalToCloud(textToSave, clientTime) {
     });
 }
 
+// 編集画面の内容（1行入力欄に未追加の文字がある場合も含む）をすべて統合して取得
+function collectCurrentEditorText() {
+    var textarea = document.getElementById("bulk-input");
+    var quickInput = document.getElementById("quick-add-input");
+    var baseText = textarea ? textarea.value : (localStorage.getItem("kuji_bulk_text") || "");
+
+    if (quickInput && quickInput.value.trim()) {
+        var quickRaw = quickInput.value.trim();
+        baseText = baseText.trim() ? (baseText.replace(/\s+$/, "") + "\n" + quickRaw) : quickRaw;
+        quickInput.value = "";
+        if (textarea) {
+            textarea.value = baseText;
+            textarea.scrollTop = textarea.scrollHeight;
+        }
+    }
+    return baseText;
+}
+
+// 「保存する」ボタンによる明示的保存
+function saveEditorExplicit() {
+    var finalText = collectCurrentEditorText();
+    if (cloudSaveTimer) {
+        clearTimeout(cloudSaveTimer);
+        cloudSaveTimer = null;
+    }
+    saveBulkText(finalText, false);
+    updateWordCountBadge(wordList.length);
+
+    var feedback = document.getElementById("save-feedback");
+    if (feedback) {
+        feedback.textContent = "保存しました";
+        feedback.classList.add("visible");
+        setTimeout(function() {
+            feedback.classList.remove("visible");
+        }, 2000);
+    }
+}
+
 // 編集画面から「一覧に戻る」を押したときに未送信データを確実に保存してから遷移
 function returnToIndex(event) {
-    var textarea = document.getElementById("bulk-input");
-    if (textarea) {
-        var val = textarea.value;
-        localStorage.setItem("kuji_bulk_text", val);
-        localStorage.setItem("kuji_items", val);
-        localStorage.setItem("kuji_pending_sync", "1");
-        localStorage.setItem("kuji_updated_at", String(Date.now()));
-    }
+    var finalText = collectCurrentEditorText();
+    localStorage.setItem("kuji_bulk_text", finalText);
+    localStorage.setItem("kuji_items", finalText);
+    localStorage.setItem("kuji_pending_sync", "1");
+    localStorage.setItem("kuji_updated_at", String(Date.now()));
+
     if (cloudSaveTimer) {
         clearTimeout(cloudSaveTimer);
         cloudSaveTimer = null;
     }
     if (currentUser && fbDb && localStorage.getItem("kuji_pending_sync") === "1") {
         if (event) event.preventDefault();
-        var latest = localStorage.getItem("kuji_bulk_text") || "";
         var done = false;
         var go = function() {
             if (done) return;
@@ -119,11 +154,11 @@ function returnToIndex(event) {
             window.location.href = "./index.html";
         };
         setTimeout(go, 350);
-        pushLocalToCloud(latest, Date.now()).then(go).catch(go);
+        pushLocalToCloud(finalText, Date.now()).then(go).catch(go);
     }
 }
 
-// スクロール不要の1行クイック追加（一番上に追加）
+// スクロール不要の1行クイック追加（リスト最下部に追加）
 function handleQuickAddKey(event) {
     if (event.key === "Enter") {
         event.preventDefault();
@@ -137,19 +172,41 @@ function addQuickWord() {
     var raw = input.value.trim();
     if (!raw) return;
 
-    var current = localStorage.getItem("kuji_bulk_text") || "";
-    var newText = current.trim() ? (raw + "\n" + current) : raw;
+    var textarea = document.getElementById("bulk-input");
+    var current = textarea ? textarea.value : (localStorage.getItem("kuji_bulk_text") || "");
+    var newText = current.trim() ? (current.replace(/\s+$/, "") + "\n" + raw) : raw;
 
     saveBulkText(newText, false);
     input.value = "";
 
-    var textarea = document.getElementById("bulk-input");
     if (textarea) {
         textarea.value = newText;
-        textarea.scrollTop = 0;
+        textarea.scrollTop = textarea.scrollHeight;
     }
     updateWordCountBadge(wordList.length);
     refreshUI();
+
+    var feedback = document.getElementById("save-feedback");
+    if (feedback) {
+        feedback.textContent = "最下部に追加・保存しました";
+        feedback.classList.add("visible");
+        setTimeout(function() {
+            feedback.classList.remove("visible");
+        }, 2000);
+    }
+}
+
+// 全体編集テキストエリアの最下部へ一発でカーソル＆スクロール移動
+function jumpToBulkBottom() {
+    var textarea = document.getElementById("bulk-input");
+    if (!textarea) return;
+    var val = textarea.value;
+    if (val && !val.endsWith("\n")) {
+        textarea.value = val + "\n";
+    }
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    textarea.scrollTop = textarea.scrollHeight;
 }
 
 // Firebase 初期化とログイン監視

@@ -8,11 +8,11 @@
     <link rel="icon" type="image/png" href="./assets/icon.png?v=6">
     <link rel="apple-touch-icon" href="./assets/icon.png?v=6">
 
-    <link rel="stylesheet" href="./assets/main.css?v=20">
+    <link rel="stylesheet" href="./assets/main.css?v=23">
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js" defer></script>
-    <script src="./assets/main.js?v=20" defer></script>
+    <script src="./assets/main.js?v=23" defer></script>
 </head>
 <body>
     <div class="app-wrapper">
@@ -37,15 +37,21 @@
 
         <!-- 登録・編集カード -->
         <section class="card editor-card">
-            <!-- スクロール不要で先頭に追加できる1行バー -->
+            <!-- スクロール不要で複数単語もまとめてリスト最下部に追加できる入力欄 -->
             <div class="quick-add-box">
-                <input type="text" id="quick-add-input" placeholder="新しい単語を先頭に追加（例: 単語 : 意味）" onkeydown="handleQuickAddKey(event)">
-                <button type="button" class="btn-quick-add" onclick="addQuickWord()">追加</button>
+                <div class="quick-add-header">
+                    <span class="editor-guide">新規追加（改行で複数まとめて最下部へ追加）</span>
+                    <button type="button" class="btn-quick-add" onclick="addQuickWord()">追加して保存</button>
+                </div>
+                <textarea id="quick-add-input" rows="3" placeholder="新しい単語を入力（改行で複数一気に追加できます&#10;例: 単語 : 意味）"></textarea>
             </div>
 
             <div class="editor-header">
-                <span class="editor-guide">一括テキスト編集（<code>単語 : 意味</code>）</span>
-                <span id="word-count" class="count-badge">0 件</span>
+                <span class="editor-guide">登録済みリスト全体の編集（<code>単語 : 意味</code>）</span>
+                <div class="editor-header-right">
+                    <button type="button" class="btn-jump-bottom" onclick="jumpToBulkBottom()">↓ 最下部へ</button>
+                    <span id="word-count" class="count-badge">0 件</span>
+                </div>
             </div>
 
             <div class="textarea-wrapper">
@@ -53,6 +59,10 @@
             </div>
 
             <div class="editor-page-actions">
+                <div class="save-action-group">
+                    <button type="button" id="save-btn" class="btn-save-explicit" onclick="saveEditorExplicit()">保存する</button>
+                    <span id="save-feedback" class="save-feedback" aria-live="polite"></span>
+                </div>
                 <div class="editor-sub-btns">
                     <button type="button" class="btn btn-sub" onclick="resetDefaultWords()">初期データ</button>
                     <button type="button" class="btn btn-sub" onclick="clearAllWords()">全消去</button>
