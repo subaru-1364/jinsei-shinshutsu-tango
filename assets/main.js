@@ -8,6 +8,8 @@ const DEFAULT_BULK_TEXT = `大吉 : 最高の運勢。すべて順調に進む�
 let wordList = [];
 let isDrawing = false;
 let editingWordId = null;
+let currentFilterTab = sessionStorage.getItem("kuji_filter_tab") || "has";
+let hasUserSelectedTab = Boolean(sessionStorage.getItem("kuji_filter_tab"));
 
 // Firebase 設定・同期用変数
 const firebaseConfig = {
@@ -109,6 +111,8 @@ function collectCurrentEditorText() {
             textarea.value = baseText;
             textarea.scrollTop = textarea.scrollHeight;
         }
+        var targetTab = /[:：\t]/.test(quickRaw) ? "has" : "none";
+        sessionStorage.setItem("kuji_filter_tab", targetTab);
     }
     return baseText;
 }
@@ -178,6 +182,9 @@ function addQuickWord() {
 
     saveBulkText(newText, false);
     input.value = "";
+
+    var targetTab = /[:：\t]/.test(raw) ? "has" : "none";
+    sessionStorage.setItem("kuji_filter_tab", targetTab);
 
     if (textarea) {
         textarea.value = newText;
@@ -431,20 +438,156 @@ function updateWordCountBadge(count) {
     }
 }
 
-// ⑥ 単語カード一覧の描画（意味がない単語はスッキリ単語のみ表示）
+// タブ切り替え（「意味あり」「意味なし」「すべて」）
+function setFilterTab(tab) {
+    currentFilterTab = tab;
+    hasUserSelectedTab = true;
+    sessionStorage.setItem("kuji_filter_tab", tab);
+    var searchInput = document.getElementById("search-input");
+    var keyword = searchInput ? searchInput.value : "";
+    renderWordCards(keyword);
+}
+
+function createWordCardElement(item) {
+    var isEditing = (editingWordId === item.id);
+    var hasMeaning = Boolean(item.meaning && item.meaning.trim() !== "");
+
+    var card = document.createElement("div");
+    card.className = isEditing ? "word-card is-editing" : "word-card";
+    card.id = "card-" + item.id;
+
+    var top = document.createElement("div");
+    top.className = "word-card-top";
+
+    var term = document.createElement("span");
+    term.className = "word-term";
+    term.textContent = item.word;
+    top.appendChild(term);
+
+    var actions = document.createElement("div");
+    actions.className = "card-actions";
+
+    if (!isEditing) {
+        var editBtn = document.createElement("button");
+        editBtn.type = "button";
+        editBtn.className = hasMeaning ? "btn-card-action" : "btn-card-action btn-card-add";
+        editBtn.title = hasMeaning ? "意味を編集" : "意味を追加";
+        editBtn.textContent = hasMeaning ? "編集" : "＋意味";
+        editBtn.addEventListener("click", function() {
+            startInlineEdit(item.id);
+        });
+        actions.appendChild(editBtn);
+    }
+
+    var delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "btn-card-action btn-card-delete";
+    delBtn.title = "削除";
+    delBtn.textContent = "×";
+    delBtn.addEventListener("click", function() {
+        deleteWordFromText(item.word);
+    });
+    actions.appendChild(delBtn);
+
+    top.appendChild(actions);
+    card.appendChild(top);
+
+    if (isEditing) {
+        var editBox = document.createElement("div");
+        editBox.className = "inline-edit-box";
+
+        var input = document.createElement("input");
+        input.type = "text";
+        input.id = "inline-input-" + item.id;
+        input.className = "inline-edit-input";
+        input.placeholder = "意味・メモを入力...";
+        input.value = item.meaning;
+        input.addEventListener("keydown", function(event) {
+            handleInlineKey(event, item.id, item.word);
+        });
+        editBox.appendChild(input);
+
+        var btns = document.createElement("div");
+        btns.className = "inline-edit-btns";
+
+        var cancelBtn = document.createElement("button");
+        cancelBtn.type = "button";
+        cancelBtn.className = "btn-inline-cancel";
+        cancelBtn.textContent = "キャンセル";
+        cancelBtn.addEventListener("click", function() {
+            cancelInlineEdit();
+        });
+        btns.appendChild(cancelBtn);
+
+        var saveBtn = document.createElement("button");
+        saveBtn.type = "button";
+        saveBtn.className = "btn-inline-save";
+        saveBtn.textContent = "保存";
+        saveBtn.addEventListener("click", function() {
+            saveInlineMeaning(item.id, item.word);
+        });
+        btns.appendChild(saveBtn);
+
+        editBox.appendChild(btns);
+        card.appendChild(editBox);
+    } else if (hasMeaning) {
+        var desc = document.createElement("p");
+        desc.className = "word-desc";
+        desc.textContent = item.meaning;
+        card.appendChild(desc);
+    }
+
+    return card;
+}
+
+// ⑥ 単語カード一覧の描画（意味あり・意味なしを分けて表示）
 function renderWordCards(filterKeyword) {
     var container = document.getElementById("word-list");
     var filteredCountElem = document.getElementById("filtered-count");
     if (!container) return;
 
-    var displayList = wordList;
+    var searchedList = wordList;
 
     if (filterKeyword && filterKeyword.trim() !== "") {
         var keyword = filterKeyword.trim().toLowerCase();
-        displayList = wordList.filter(function(item) {
+        searchedList = wordList.filter(function(item) {
             return item.word.toLowerCase().includes(keyword) || 
                    item.meaning.toLowerCase().includes(keyword);
         });
+    }
+
+    var withMeaningList = searchedList.filter(function(item) {
+        return item.meaning && item.meaning.trim() !== "";
+    });
+    var withoutMeaningList = searchedList.filter(function(item) {
+        return !item.meaning || item.meaning.trim() === "";
+    });
+
+    // 初回表示時、「意味あり」が0件で「意味なし」がある場合は自動で「意味なし」タブを選択
+    if (!hasUserSelectedTab && currentFilterTab === "has" && withMeaningList.length === 0 && withoutMeaningList.length > 0) {
+        currentFilterTab = "none";
+    }
+
+    // タブ件数バッジと選択状態の更新
+    var countHasElem = document.getElementById("count-has-meaning");
+    var countNoElem = document.getElementById("count-no-meaning");
+    var countAllElem = document.getElementById("count-all");
+    if (countHasElem) countHasElem.textContent = String(withMeaningList.length);
+    if (countNoElem) countNoElem.textContent = String(withoutMeaningList.length);
+    if (countAllElem) countAllElem.textContent = String(searchedList.length);
+
+    var tabHas = document.getElementById("tab-has-meaning");
+    var tabNo = document.getElementById("tab-no-meaning");
+    var tabAll = document.getElementById("tab-all");
+    if (tabHas) tabHas.classList.toggle("active", currentFilterTab === "has");
+    if (tabNo) tabNo.classList.toggle("active", currentFilterTab === "none");
+    if (tabAll) tabAll.classList.toggle("active", currentFilterTab === "all");
+
+    var displayList = searchedList;
+    if (currentFilterTab === "has") {
+        displayList = withMeaningList;
+    } else if (currentFilterTab === "none") {
+        displayList = withoutMeaningList;
     }
 
     if (filteredCountElem) {
@@ -455,8 +598,12 @@ function renderWordCards(filterKeyword) {
         container.textContent = "";
         var emptyDiv = document.createElement("div");
         emptyDiv.className = "empty-state";
-        if (filterKeyword) {
+        if (filterKeyword && filterKeyword.trim() !== "") {
             emptyDiv.textContent = "「" + filterKeyword + "」に一致する単語は見つかりませんでした";
+        } else if (currentFilterTab === "has" && withoutMeaningList.length > 0) {
+            emptyDiv.textContent = "意味が登録されている単語はまだありません（「意味なし」タブに " + withoutMeaningList.length + " 件あります）";
+        } else if (currentFilterTab === "none" && withMeaningList.length > 0) {
+            emptyDiv.textContent = "意味が未登録の単語はありません（すべての単語に意味がついています）";
         } else {
             emptyDiv.appendChild(document.createTextNode("登録されている単語がありません。"));
             emptyDiv.appendChild(document.createElement("br"));
@@ -473,97 +620,29 @@ function renderWordCards(filterKeyword) {
     container.textContent = "";
     var fragment = document.createDocumentFragment();
 
-    displayList.forEach(function(item) {
-        var isEditing = (editingWordId === item.id);
-        var hasMeaning = (item.meaning && item.meaning.trim() !== "");
+    if (currentFilterTab === "all" && withMeaningList.length > 0 && withoutMeaningList.length > 0) {
+        var headerHas = document.createElement("div");
+        headerHas.className = "word-group-title";
+        headerHas.textContent = "意味あり（" + withMeaningList.length + "件）";
+        fragment.appendChild(headerHas);
 
-        var card = document.createElement("div");
-        card.className = isEditing ? "word-card is-editing" : "word-card";
-        card.id = "card-" + item.id;
-
-        var top = document.createElement("div");
-        top.className = "word-card-top";
-
-        var term = document.createElement("span");
-        term.className = "word-term";
-        term.textContent = item.word;
-        top.appendChild(term);
-
-        var actions = document.createElement("div");
-        actions.className = "card-actions";
-
-        if (!isEditing) {
-            var editBtn = document.createElement("button");
-            editBtn.type = "button";
-            editBtn.className = hasMeaning ? "btn-card-action" : "btn-card-action btn-card-add";
-            editBtn.title = hasMeaning ? "意味を編集" : "意味を追加";
-            editBtn.textContent = hasMeaning ? "編集" : "＋意味";
-            editBtn.addEventListener("click", function() {
-                startInlineEdit(item.id);
-            });
-            actions.appendChild(editBtn);
-        }
-
-        var delBtn = document.createElement("button");
-        delBtn.type = "button";
-        delBtn.className = "btn-card-action btn-card-delete";
-        delBtn.title = "削除";
-        delBtn.textContent = "×";
-        delBtn.addEventListener("click", function() {
-            deleteWordFromText(item.word);
+        withMeaningList.forEach(function(item) {
+            fragment.appendChild(createWordCardElement(item));
         });
-        actions.appendChild(delBtn);
 
-        top.appendChild(actions);
-        card.appendChild(top);
+        var headerNone = document.createElement("div");
+        headerNone.className = "word-group-title word-group-title-spaced";
+        headerNone.textContent = "意味なし（" + withoutMeaningList.length + "件）";
+        fragment.appendChild(headerNone);
 
-        if (isEditing) {
-            var editBox = document.createElement("div");
-            editBox.className = "inline-edit-box";
-
-            var input = document.createElement("input");
-            input.type = "text";
-            input.id = "inline-input-" + item.id;
-            input.className = "inline-edit-input";
-            input.placeholder = "意味・メモを入力...";
-            input.value = item.meaning;
-            input.addEventListener("keydown", function(event) {
-                handleInlineKey(event, item.id, item.word);
-            });
-            editBox.appendChild(input);
-
-            var btns = document.createElement("div");
-            btns.className = "inline-edit-btns";
-
-            var cancelBtn = document.createElement("button");
-            cancelBtn.type = "button";
-            cancelBtn.className = "btn-inline-cancel";
-            cancelBtn.textContent = "キャンセル";
-            cancelBtn.addEventListener("click", function() {
-                cancelInlineEdit();
-            });
-            btns.appendChild(cancelBtn);
-
-            var saveBtn = document.createElement("button");
-            saveBtn.type = "button";
-            saveBtn.className = "btn-inline-save";
-            saveBtn.textContent = "保存";
-            saveBtn.addEventListener("click", function() {
-                saveInlineMeaning(item.id, item.word);
-            });
-            btns.appendChild(saveBtn);
-
-            editBox.appendChild(btns);
-            card.appendChild(editBox);
-        } else if (hasMeaning) {
-            var desc = document.createElement("p");
-            desc.className = "word-desc";
-            desc.textContent = item.meaning;
-            card.appendChild(desc);
-        }
-
-        fragment.appendChild(card);
-    });
+        withoutMeaningList.forEach(function(item) {
+            fragment.appendChild(createWordCardElement(item));
+        });
+    } else {
+        displayList.forEach(function(item) {
+            fragment.appendChild(createWordCardElement(item));
+        });
+    }
 
     container.appendChild(fragment);
 

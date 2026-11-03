@@ -8,11 +8,11 @@
     <link rel="icon" type="image/png" href="./assets/icon.png?v=6">
     <link rel="apple-touch-icon" href="./assets/icon.png?v=6">
 
-    <link rel="stylesheet" href="./assets/main.css?v=23">
+    <link rel="stylesheet" href="./assets/main.css?v=24">
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js" defer></script>
-    <script src="./assets/main.js?v=23" defer></script>
+    <script src="./assets/main.js?v=24" defer></script>
 </head>
 <body>
     <div class="app-wrapper">
@@ -63,6 +63,19 @@
                     </h2>
                     <span id="filtered-count" class="count-badge">0 件</span>
                 </div>
+            </div>
+
+            <!-- 意味あり / 意味なし 切り替えタブ -->
+            <div class="filter-tabs" role="tablist" aria-label="単語の表示切り替え">
+                <button type="button" id="tab-has-meaning" class="filter-tab active" onclick="setFilterTab('has')">
+                    意味あり <span id="count-has-meaning" class="tab-count">0</span>
+                </button>
+                <button type="button" id="tab-no-meaning" class="filter-tab" onclick="setFilterTab('none')">
+                    意味なし <span id="count-no-meaning" class="tab-count">0</span>
+                </button>
+                <button type="button" id="tab-all" class="filter-tab" onclick="setFilterTab('all')">
+                    すべて <span id="count-all" class="tab-count">0</span>
+                </button>
             </div>
 
             <!-- 検索バー -->
