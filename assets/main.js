@@ -61,26 +61,95 @@ function refreshUI() {
 
 // ローカル保存＋クラウド同期の一括ヘルパー
 function saveBulkText(newText, debounceCloud) {
+    var now = Date.now();
     localStorage.setItem("kuji_bulk_text", newText);
     localStorage.setItem("kuji_items", newText);
+    localStorage.setItem("kuji_pending_sync", "1");
+    localStorage.setItem("kuji_updated_at", String(now));
     syncWordList();
 
     if (currentUser && fbDb) {
         updateSyncStatus("同期中...", true);
         if (cloudSaveTimer) clearTimeout(cloudSaveTimer);
-        var delay = debounceCloud ? 600 : 0;
+        var delay = debounceCloud ? 150 : 0;
         cloudSaveTimer = setTimeout(function() {
-            fbDb.ref("users/" + currentUser.uid).set({
-                bulkText: newText,
-                updatedAt: firebase.database.ServerValue.TIMESTAMP
-            }).then(function() {
-                updateSyncStatus("同期済み", true);
-            }).catch(function(err) {
-                console.error("Cloud save error:", err);
-                updateSyncStatus("同期エラー", false);
-            });
+            pushLocalToCloud(newText, now);
         }, delay);
     }
+}
+
+function pushLocalToCloud(textToSave, clientTime) {
+    if (!currentUser || !fbDb) return Promise.resolve();
+    return fbDb.ref("users/" + currentUser.uid).set({
+        bulkText: textToSave,
+        clientUpdatedAt: clientTime || Date.now(),
+        updatedAt: firebase.database.ServerValue.TIMESTAMP
+    }).then(function() {
+        if ((localStorage.getItem("kuji_bulk_text") || "") === textToSave) {
+            localStorage.removeItem("kuji_pending_sync");
+        }
+        updateSyncStatus("同期済み", true);
+    }).catch(function(err) {
+        console.error("Cloud save error:", err);
+        updateSyncStatus("同期エラー", false);
+    });
+}
+
+// 編集画面から「一覧に戻る」を押したときに未送信データを確実に保存してから遷移
+function returnToIndex(event) {
+    var textarea = document.getElementById("bulk-input");
+    if (textarea) {
+        var val = textarea.value;
+        localStorage.setItem("kuji_bulk_text", val);
+        localStorage.setItem("kuji_items", val);
+        localStorage.setItem("kuji_pending_sync", "1");
+        localStorage.setItem("kuji_updated_at", String(Date.now()));
+    }
+    if (cloudSaveTimer) {
+        clearTimeout(cloudSaveTimer);
+        cloudSaveTimer = null;
+    }
+    if (currentUser && fbDb && localStorage.getItem("kuji_pending_sync") === "1") {
+        if (event) event.preventDefault();
+        var latest = localStorage.getItem("kuji_bulk_text") || "";
+        var done = false;
+        var go = function() {
+            if (done) return;
+            done = true;
+            window.location.href = "./index.html";
+        };
+        setTimeout(go, 350);
+        pushLocalToCloud(latest, Date.now()).then(go).catch(go);
+    }
+}
+
+// スクロール不要の1行クイック追加（一番上に追加）
+function handleQuickAddKey(event) {
+    if (event.key === "Enter") {
+        event.preventDefault();
+        addQuickWord();
+    }
+}
+
+function addQuickWord() {
+    var input = document.getElementById("quick-add-input");
+    if (!input) return;
+    var raw = input.value.trim();
+    if (!raw) return;
+
+    var current = localStorage.getItem("kuji_bulk_text") || "";
+    var newText = current.trim() ? (raw + "\n" + current) : raw;
+
+    saveBulkText(newText, false);
+    input.value = "";
+
+    var textarea = document.getElementById("bulk-input");
+    if (textarea) {
+        textarea.value = newText;
+        textarea.scrollTop = 0;
+    }
+    updateWordCountBadge(wordList.length);
+    refreshUI();
 }
 
 // Firebase 初期化とログイン監視
@@ -166,26 +235,37 @@ function startCloudSync(user) {
     activeDbRef = fbDb.ref("users/" + user.uid);
     activeDbRef.on("value", function(snapshot) {
         var localText = localStorage.getItem("kuji_bulk_text") || "";
+        var hasPendingLocal = (localStorage.getItem("kuji_pending_sync") === "1");
+        var localUpdatedAt = Number(localStorage.getItem("kuji_updated_at") || 0);
+
         if (snapshot.exists()) {
             var data = snapshot.val();
             var cloudText = (data && typeof data.bulkText === "string") ? data.bulkText : "";
+            var cloudUpdatedAt = (data && typeof data.clientUpdatedAt === "number") ? data.clientUpdatedAt : 0;
+
+            // スマホ等で編集直後にページ遷移して未送信データが残っている場合は、ローカルを優先してクラウドへ送信
+            if (hasPendingLocal && localUpdatedAt >= cloudUpdatedAt) {
+                pushLocalToCloud(localText, localUpdatedAt);
+                return;
+            }
 
             // クラウドが空でローカルにデータがある場合はローカルをクラウドへアップロード
             if (!cloudText.trim() && localText.trim()) {
-                saveBulkText(localText, false);
+                pushLocalToCloud(localText, Date.now());
                 return;
             }
 
             if (cloudText !== localText) {
                 localStorage.setItem("kuji_bulk_text", cloudText);
                 localStorage.setItem("kuji_items", cloudText);
+                localStorage.removeItem("kuji_pending_sync");
                 syncWordList();
                 refreshUI();
             }
             updateSyncStatus("同期済み", true);
         } else {
             // 初回ログイン時：現在のローカルデータをクラウドに保存
-            saveBulkText(localText, false);
+            pushLocalToCloud(localText, Date.now());
         }
     }, function(err) {
         console.error("Snapshot error:", err);
@@ -195,22 +275,16 @@ function startCloudSync(user) {
 
 // ② ユーザーが保存していた元データ（kuji_items）を絶対に失わせず最優先で復旧する
 function recoverOriginalUserData() {
-    var originalItems = localStorage.getItem("kuji_items");
     var currentBulk = localStorage.getItem("kuji_bulk_text");
+    var originalItems = localStorage.getItem("kuji_items");
     var oldWordsV2 = localStorage.getItem("kuji_words_v2");
 
     var targetText = "";
 
-    // ユーザーが以前から入力していた元データ（kuji_items）を最優先で確認
-    if (originalItems && originalItems.trim() !== "") {
-        // currentBulk がサンプルデータ、または空なら即座に元データで上書き復旧
-        if (!currentBulk || currentBulk.includes("イノベーション") || currentBulk.trim() === "大吉\n中吉\n小吉") {
-            targetText = originalItems;
-        } else {
-            targetText = currentBulk;
-        }
-    } else if (currentBulk && currentBulk.trim() !== "") {
+    if (currentBulk !== null && currentBulk.trim() !== "") {
         targetText = currentBulk;
+    } else if (originalItems && originalItems.trim() !== "") {
+        targetText = originalItems;
     } else if (oldWordsV2) {
         try {
             var parsed = JSON.parse(oldWordsV2);
@@ -230,7 +304,6 @@ function recoverOriginalUserData() {
         .replace(/[:：\t]\s*\(意味未設定\)/g, "");
 
     localStorage.setItem("kuji_bulk_text", cleaned);
-    // 元データキーも絶対に消さずに保護・同期保持
     localStorage.setItem("kuji_items", cleaned);
 }
 
@@ -348,7 +421,7 @@ function renderWordCards(filterKeyword) {
         var hasMeaning = (item.meaning && item.meaning.trim() !== "");
 
         var card = document.createElement("div");
-        card.className = "word-card";
+        card.className = isEditing ? "word-card is-editing" : "word-card";
         card.id = "card-" + item.id;
 
         var top = document.createElement("div");
@@ -362,12 +435,12 @@ function renderWordCards(filterKeyword) {
         var actions = document.createElement("div");
         actions.className = "card-actions";
 
-        if (hasMeaning && !isEditing) {
+        if (!isEditing) {
             var editBtn = document.createElement("button");
             editBtn.type = "button";
-            editBtn.className = "btn-card-action";
-            editBtn.title = "編集";
-            editBtn.textContent = "編集";
+            editBtn.className = hasMeaning ? "btn-card-action" : "btn-card-action btn-card-add";
+            editBtn.title = hasMeaning ? "意味を編集" : "意味を追加";
+            editBtn.textContent = hasMeaning ? "編集" : "＋意味";
             editBtn.addEventListener("click", function() {
                 startInlineEdit(item.id);
             });
@@ -430,19 +503,6 @@ function renderWordCards(filterKeyword) {
             desc.className = "word-desc";
             desc.textContent = item.meaning;
             card.appendChild(desc);
-        } else {
-            var footer = document.createElement("div");
-            footer.className = "word-card-footer";
-
-            var addMeaningBtn = document.createElement("button");
-            addMeaningBtn.type = "button";
-            addMeaningBtn.className = "btn-add-meaning";
-            addMeaningBtn.textContent = "＋ 意味を追加";
-            addMeaningBtn.addEventListener("click", function() {
-                startInlineEdit(item.id);
-            });
-            footer.appendChild(addMeaningBtn);
-            card.appendChild(footer);
         }
 
         fragment.appendChild(card);

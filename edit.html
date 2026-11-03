@@ -8,11 +8,11 @@
     <link rel="icon" type="image/png" href="./assets/icon.png?v=6">
     <link rel="apple-touch-icon" href="./assets/icon.png?v=6">
 
-    <link rel="stylesheet" href="./assets/main.css?v=19">
+    <link rel="stylesheet" href="./assets/main.css?v=20">
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js" defer></script>
-    <script src="./assets/main.js?v=15" defer></script>
+    <script src="./assets/main.js?v=20" defer></script>
 </head>
 <body>
     <div class="app-wrapper">
@@ -28,7 +28,7 @@
                     <span id="sync-status" class="sync-status">未同期</span>
                     <button type="button" id="auth-btn" class="btn-auth" onclick="handleAuthClick()">Google同期</button>
                 </div>
-                <a href="./index.html" class="btn btn-nav">
+                <a href="./index.html" class="btn btn-nav" onclick="returnToIndex(event)">
                     <svg class="icon-line" viewBox="0 0 16 16" aria-hidden="true"><path d="M12.5 8H3.5M7 4.5L3.5 8 7 11.5"/></svg>
                     一覧に戻る
                 </a>
@@ -37,8 +37,14 @@
 
         <!-- 登録・編集カード -->
         <section class="card editor-card">
+            <!-- スクロール不要で先頭に追加できる1行バー -->
+            <div class="quick-add-box">
+                <input type="text" id="quick-add-input" placeholder="新しい単語を先頭に追加（例: 単語 : 意味）" onkeydown="handleQuickAddKey(event)">
+                <button type="button" class="btn-quick-add" onclick="addQuickWord()">追加</button>
+            </div>
+
             <div class="editor-header">
-                <span class="editor-guide">1行に1単語ずつ入力（意味を入れる場合は <code>単語 : 意味</code>）</span>
+                <span class="editor-guide">一括テキスト編集（<code>単語 : 意味</code>）</span>
                 <span id="word-count" class="count-badge">0 件</span>
             </div>
 

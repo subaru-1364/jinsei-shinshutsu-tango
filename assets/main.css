@@ -91,6 +91,7 @@ body {
     color: var(--text-primary);
     margin: 0;
     letter-spacing: -0.01em;
+    white-space: nowrap;
 }
 
 .header-actions {
@@ -375,13 +376,16 @@ body {
     border: 1px solid #dcdad0;
     border-left: 3px solid #18181b;
     border-radius: 6px;
-    padding: 0.65rem 0.85rem;
+    padding: 0.45rem 0.7rem;
     box-shadow: 0 2px 0 rgba(24, 24, 27, 0.04);
     transition: all 0.15s ease;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
-    min-height: 68px;
+    justify-content: center;
+}
+
+.word-card.is-editing {
+    grid-column: 1 / -1;
 }
 
 .word-card:hover {
@@ -393,14 +397,14 @@ body {
 
 .word-card-top {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
-    gap: 0.4rem;
-    margin-bottom: 0.25rem;
+    gap: 0.35rem;
+    margin-bottom: 0;
 }
 
 .word-term {
-    font-size: 1rem;
+    font-size: 0.95rem;
     font-weight: 700;
     color: var(--text-primary);
     word-break: break-word;
@@ -410,7 +414,7 @@ body {
 .card-actions {
     display: flex;
     align-items: center;
-    gap: 0.15rem;
+    gap: 0.1rem;
     flex-shrink: 0;
 }
 
@@ -420,9 +424,15 @@ body {
     color: var(--text-muted);
     cursor: pointer;
     font-size: 0.72rem;
-    padding: 0.1rem 0.3rem;
+    padding: 0.1rem 0.28rem;
     border-radius: 4px;
     transition: color 0.15s, background-color 0.15s;
+    white-space: nowrap;
+}
+
+.btn-card-add {
+    color: var(--text-secondary);
+    font-weight: 500;
 }
 
 .btn-card-action:hover {
@@ -554,6 +564,59 @@ body {
     gap: 0.65rem;
 }
 
+.quick-add-box {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding-bottom: 0.55rem;
+    border-bottom: 1px dashed #e2e0d8;
+}
+
+.quick-add-box input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.5rem 0.7rem;
+    font-family: inherit;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    background-color: #f9f8f5;
+    border: 1px solid #d4d2c8;
+    border-radius: 6px;
+    transition: all 0.15s;
+}
+
+.quick-add-box input:focus {
+    background-color: #ffffff;
+    border-color: var(--text-primary);
+    box-shadow: 0 0 0 2px rgba(24, 24, 27, 0.08);
+    outline: none;
+}
+
+.btn-quick-add {
+    flex-shrink: 0;
+    padding: 0.5rem 0.9rem;
+    font-family: inherit;
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: #ffffff;
+    background-color: var(--primary-color);
+    border: 1px solid #09090b;
+    border-radius: 6px;
+    cursor: pointer;
+    box-shadow: 0 1px 0 #09090b;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.btn-quick-add:hover {
+    background-color: var(--primary-hover);
+}
+
+.btn-quick-add:active {
+    transform: translateY(1px);
+    box-shadow: none;
+}
+
 .editor-header {
     display: flex;
     align-items: center;
@@ -650,10 +713,38 @@ textarea#bulk-input:focus {
 
 @media (max-width: 600px) {
     .app-wrapper {
-        padding: 1rem 0.85rem 2.5rem;
-        gap: 0.75rem;
+        padding: 0.85rem 0.75rem 2.2rem;
+        gap: 0.65rem;
+    }
+    .app-header {
+        flex-wrap: wrap;
+        gap: 0.45rem;
+    }
+    .app-icon {
+        width: 32px;
+        height: 32px;
+    }
+    .app-title {
+        font-size: 1.05rem;
+        white-space: nowrap;
+    }
+    .header-actions {
+        margin-left: auto;
+        gap: 0.35rem;
     }
     .word-list {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.45rem;
+    }
+    .word-card {
+        padding: 0.4rem 0.55rem;
+    }
+    .word-term {
+        font-size: 0.88rem;
+    }
+    .word-desc {
+        font-size: 0.76rem;
+        margin-top: 0.15rem;
+        padding-top: 0.25rem;
     }
 }
