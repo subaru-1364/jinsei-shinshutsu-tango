@@ -74,10 +74,10 @@ function saveBulkText(newText, debounceCloud) {
                 bulkText: newText,
                 updatedAt: firebase.database.ServerValue.TIMESTAMP
             }).then(function() {
-                updateSyncStatus("☁️ 同期済み", true);
+                updateSyncStatus("同期済み", true);
             }).catch(function(err) {
                 console.error("Cloud save error:", err);
-                updateSyncStatus("⚠️ 同期エラー", false);
+                updateSyncStatus("同期エラー", false);
             });
         }, delay);
     }
@@ -117,13 +117,13 @@ function updateAuthUI(user) {
     if (!statusEl || !btnEl) return;
 
     if (user) {
-        statusEl.textContent = "☁️ 同期中";
+        statusEl.textContent = "同期中";
         statusEl.classList.add("synced");
         btnEl.textContent = "ログアウト";
     } else {
-        statusEl.textContent = "端末内保存";
+        statusEl.textContent = "未同期";
         statusEl.classList.remove("synced");
-        btnEl.textContent = "☁️ Google同期";
+        btnEl.textContent = "Google同期";
     }
 }
 
@@ -140,18 +140,18 @@ function updateSyncStatus(text, isSynced) {
 
 function handleAuthClick() {
     if (!fbAuth) {
-        alert("Firebaseの読み込み中です。少し待ってからもう一度お試しください。");
+        alert("読み込み中です。少し待ってからもう一度お試しください。");
         return;
     }
     if (currentUser) {
-        if (confirm("Google同期からログアウトしますか？\n（端末内の単語データはそのまま残ります）")) {
+        if (confirm("ログアウトしますか？\n（端末内の単語データはそのまま残ります）")) {
             fbAuth.signOut();
         }
     } else {
         var provider = new firebase.auth.GoogleAuthProvider();
         fbAuth.signInWithPopup(provider).catch(function(err) {
             if (err.code === "auth/unauthorized-domain" || err.code === "auth/operation-not-supported-in-this-environment") {
-                alert("現在の開き方（file:// など）ではGoogleログインのポップアップが制限されています。\nGitHub PagesのURL（https://...）またはローカルサーバーから開くとログインできます！");
+                alert("現在の開き方（file:// など）ではGoogleログインのポップアップが制限されています。\n公開URL（https://...）から開くとログインできます。");
             } else if (err.code !== "auth/popup-closed-by-user") {
                 alert("ログインエラー: " + err.message);
             }
@@ -182,14 +182,14 @@ function startCloudSync(user) {
                 syncWordList();
                 refreshUI();
             }
-            updateSyncStatus("☁️ 同期済み", true);
+            updateSyncStatus("同期済み", true);
         } else {
             // 初回ログイン時：現在のローカルデータをクラウドに保存
             saveBulkText(localText, false);
         }
     }, function(err) {
         console.error("Snapshot error:", err);
-        updateSyncStatus("⚠️ 権限/設定確認", false);
+        updateSyncStatus("設定確認", false);
     });
 }
 
@@ -333,7 +333,7 @@ function renderWordCards(filterKeyword) {
             var addLink = document.createElement("a");
             addLink.href = "./edit.html";
             addLink.className = "link-add-empty";
-            addLink.textContent = "📝 単語を登録する";
+            addLink.textContent = "単語を登録・編集";
             emptyDiv.appendChild(addLink);
         }
         container.appendChild(emptyDiv);
@@ -366,8 +366,8 @@ function renderWordCards(filterKeyword) {
             var editBtn = document.createElement("button");
             editBtn.type = "button";
             editBtn.className = "btn-card-action";
-            editBtn.title = "意味を編集";
-            editBtn.textContent = "✏️";
+            editBtn.title = "編集";
+            editBtn.textContent = "編集";
             editBtn.addEventListener("click", function() {
                 startInlineEdit(item.id);
             });
@@ -378,7 +378,7 @@ function renderWordCards(filterKeyword) {
         delBtn.type = "button";
         delBtn.className = "btn-card-action btn-card-delete";
         delBtn.title = "削除";
-        delBtn.textContent = "🗑️";
+        delBtn.textContent = "×";
         delBtn.addEventListener("click", function() {
             deleteWordFromText(item.word);
         });

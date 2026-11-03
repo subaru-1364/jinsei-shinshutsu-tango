@@ -5,15 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>単語の登録・編集 - 人生新出単語</title>
     
-    <link rel="icon" href="./icon.jpg">
-    <link rel="apple-touch-icon" href="./icon.jpg">
+    <link rel="icon" type="image/svg+xml" href="./icon.svg?v=5">
+    <link rel="alternate icon" type="image/png" href="./icon.png?v=5">
+    <link rel="apple-touch-icon" href="./icon.png?v=5">
 
     <link rel="stylesheet" href="./sanitize.css">
-    <link rel="stylesheet" href="./main.css?v=12">
+    <link rel="stylesheet" href="./main.css?v=14">
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js" defer></script>
-    <script src="./main.js?v=12" defer></script>
+    <script src="./main.js?v=14" defer></script>
 </head>
 <body>
     <div class="app-wrapper">
@@ -21,41 +22,34 @@
         <header class="app-header header-edit-page">
             <div class="edit-header-top">
                 <a href="./kuji.html" class="btn-back">
-                    ← 単語一覧に戻る
+                    ← 一覧に戻る
                 </a>
                 <div id="auth-bar" class="auth-bar">
-                    <span id="sync-status" class="sync-status">端末内保存</span>
-                    <button type="button" id="auth-btn" class="btn-auth" onclick="handleAuthClick()">☁️ Google同期</button>
+                    <span id="sync-status" class="sync-status">未同期</span>
+                    <button type="button" id="auth-btn" class="btn-auth" onclick="handleAuthClick()">Google同期</button>
                 </div>
             </div>
-            <h1 class="app-title">📝 単語の一括登録・編集</h1>
-            <p class="app-subtitle">単語を改行区切りでまとめて入力・編集できます</p>
+            <h1 class="app-title">単語を登録・編集</h1>
         </header>
 
         <!-- 登録・編集カード -->
         <section class="card editor-card">
             <div class="editor-header">
-                <span class="editor-badge">入力エリア</span>
+                <span class="editor-guide">1行に1単語ずつ入力（意味を入れる場合は <code>単語 : 意味</code>）</span>
                 <span id="word-count" class="count-badge">0 件</span>
             </div>
-            
-            <p class="editor-guide">
-                <strong>1行に1単語ずつ</strong> 改行して入力してください（コピペもOK！）。<br>
-                意味も登録したい場合は <code>単語 : 意味</code> のようにコロンで区切ってください。<br>
-                <span class="guide-note">※ 単語だけでも登録できます。入力した内容は自動保存されます。</span>
-            </p>
 
             <div class="textarea-wrapper">
-                <textarea id="bulk-input" rows="10" placeholder="単語を改行区切りで入力...&#10;例:&#10;大吉 : 最高の運勢&#10;中吉&#10;小吉&#10;リンゴ : 赤い果物" oninput="handleBulkInput()"></textarea>
+                <textarea id="bulk-input" rows="12" placeholder="単語を改行区切りで入力..." oninput="handleBulkInput()"></textarea>
             </div>
 
             <div class="editor-page-actions">
                 <a href="./kuji.html" class="btn btn-primary btn-save-return">
-                    ✓ 保存して一覧に戻る
+                    一覧に戻る
                 </a>
                 <div class="editor-sub-btns">
-                    <button type="button" class="btn btn-sub" onclick="resetDefaultWords()">初期データに戻す</button>
-                    <button type="button" class="btn btn-sub" onclick="clearAllWords()">すべてクリア</button>
+                    <button type="button" class="btn btn-sub" onclick="resetDefaultWords()">初期データ</button>
+                    <button type="button" class="btn btn-sub" onclick="clearAllWords()">全消去</button>
                 </div>
             </div>
         </section>

@@ -5,76 +5,66 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>人生新出単語</title>
     
-    <link rel="icon" href="./icon.jpg">
-    <link rel="apple-touch-icon" href="./icon.jpg">
+    <link rel="icon" type="image/svg+xml" href="./icon.svg?v=5">
+    <link rel="alternate icon" type="image/png" href="./icon.png?v=5">
+    <link rel="apple-touch-icon" href="./icon.png?v=5">
 
     <link rel="stylesheet" href="./sanitize.css">
-    <link rel="stylesheet" href="./main.css?v=12">
+    <link rel="stylesheet" href="./main.css?v=14">
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js" defer></script>
-    <script src="./main.js?v=12" defer></script>
+    <script src="./main.js?v=14" defer></script>
 </head>
 <body>
     <div class="app-wrapper">
         <!-- ヘッダー -->
         <header class="app-header">
             <div class="header-content">
-                <img src="./icon.jpg" alt="アプリアイコン" class="app-icon">
                 <div class="header-text">
                     <h1 class="app-title">人生新出単語</h1>
-                    <p class="app-subtitle">登録単語の一覧・検索とランダムくじ引き</p>
                 </div>
             </div>
             <div class="header-actions">
                 <div id="auth-bar" class="auth-bar">
-                    <span id="sync-status" class="sync-status">端末内保存</span>
-                    <button type="button" id="auth-btn" class="btn-auth" onclick="handleAuthClick()">☁️ Google同期</button>
+                    <span id="sync-status" class="sync-status">未同期</span>
+                    <button type="button" id="auth-btn" class="btn-auth" onclick="handleAuthClick()">Google同期</button>
                 </div>
-                <a href="./edit.html" class="btn btn-nav">
-                    <span class="btn-symbol">📝</span> 単語を登録・編集
-                </a>
+                <a href="./edit.html" class="btn btn-nav">単語を登録・編集</a>
             </div>
         </header>
 
-        <!-- サブ機能: ランダムくじ引きカード（コンパクト設計） -->
+        <!-- ランダムくじ引き -->
         <section class="card draw-section">
             <div class="draw-row">
-                <div class="draw-label-wrap">
-                    <span class="sub-badge">🎲 サブ機能</span>
-                    <span class="sub-title">ランダムくじ</span>
-                </div>
+                <span class="sub-title">ランダムピックアップ</span>
                 <button id="draw-btn" class="btn btn-primary btn-draw-compact" onclick="drawWord()">
-                    くじを引く！
+                    引く
                 </button>
             </div>
             
             <div id="draw-result" class="draw-result-box" style="display: none;" aria-live="polite">
-                <div class="result-word-label">選ばれた単語</div>
-                <div id="result-word" class="result-word">？？？</div>
+                <div id="result-word" class="result-word"></div>
                 <div id="result-meaning" class="result-meaning"></div>
             </div>
         </section>
 
-        <!-- メイン機能: 単語一覧・検索 -->
+        <!-- 単語一覧・検索 -->
         <section class="card list-card">
             <div class="list-header">
                 <div class="list-title-wrap">
-                    <h2 class="card-title">📚 登録単語一覧</h2>
+                    <h2 class="card-title">登録単語</h2>
                     <span id="filtered-count" class="count-badge">0 件</span>
                 </div>
-                <a href="./edit.html" class="link-edit-sub">＋ 一括登録・編集</a>
             </div>
 
             <!-- 検索バー -->
             <div class="search-box">
-                <span class="search-icon">🔍</span>
-                <input type="text" id="search-input" placeholder="単語や意味で検索..." oninput="handleSearch()">
+                <input type="text" id="search-input" placeholder="検索..." oninput="handleSearch()">
             </div>
 
             <!-- 単語カード一覧コンテナ -->
             <div id="word-list" class="word-list" role="list">
-                <!-- JavaScript で動的に出力 -->
             </div>
         </section>
     </div>
