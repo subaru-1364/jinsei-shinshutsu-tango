@@ -7,10 +7,10 @@ Googleアカウントでのクラウドリアルタイム同期（PC・スマホ
 
 ## 🚀 アプリを開く（ワンクリック起動）
 
-### 👉 **[ここをクリックして「人生新出単語」を開く](https://subaru-1364.github.io/jinsei-shinshutsu-tango/kuji.html)**
+### 👉 **[ここをクリックして「人生新出単語」を開く](https://subaru-1364.github.io/jinsei-tango/)**
 
-- 📝 **[単語の一括登録・編集ページを直接開く](https://subaru-1364.github.io/jinsei-shinshutsu-tango/edit.html)**
-- URL: `https://subaru-1364.github.io/jinsei-shinshutsu-tango/kuji.html`
+- 📝 **[単語の一括登録・編集ページを直接開く](https://subaru-1364.github.io/jinsei-tango/edit.html)**
+- URL: `https://subaru-1364.github.io/jinsei-tango/`
 
 ---
 
@@ -20,3 +20,4 @@ Googleアカウントでのクラウドリアルタイム同期（PC・スマホ
 - **改行区切りで一括登録**：大量の単語もコピペでまとめて登録
 - **☁️ Googleクラウド同期**：PCとスマホで同じ単語データをリアルタイム共有
 - **🎲 ランダムくじ引き**：登録した単語からランダムに1つをピックアップ
+
