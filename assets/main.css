@@ -417,7 +417,7 @@ body {
     width: 100%;
     padding: 0.52rem 0.8rem 0.52rem 2.1rem;
     font-family: inherit;
-    font-size: 0.86rem;
+    font-size: 16px;
     border: 1px solid #d4d2c8;
     border-radius: 6px;
     background-color: #f9f8f5;
@@ -503,6 +503,17 @@ body {
     font-weight: 500;
 }
 
+.btn-card-known {
+    color: #15803d;
+    font-weight: 700;
+    padding: 0.1rem 0.35rem;
+}
+
+.btn-card-known:hover {
+    color: #166534 !important;
+    background-color: #dcfce7 !important;
+}
+
 .btn-card-action:hover {
     color: var(--text-primary);
     background-color: #f4f4f5;
@@ -554,8 +565,8 @@ body {
 
 .inline-edit-input {
     width: 100%;
-    padding: 0.35rem 0.5rem;
-    font-size: 0.82rem;
+    padding: 0.4rem 0.55rem;
+    font-size: 16px;
     border: 1px solid var(--text-primary);
     border-radius: 4px;
     outline: none;
@@ -651,7 +662,7 @@ body {
     width: 100%;
     padding: 0.55rem 0.7rem;
     font-family: inherit;
-    font-size: 0.9rem;
+    font-size: 16px;
     line-height: 1.5;
     color: var(--text-primary);
     background-color: #f9f8f5;
@@ -746,7 +757,7 @@ textarea#bulk-input {
     width: 100%;
     padding: 0.75rem;
     font-family: inherit;
-    font-size: 0.9rem;
+    font-size: 16px;
     line-height: 1.6;
     color: var(--text-primary);
     background-color: #fafafa;
@@ -877,5 +888,8 @@ textarea#bulk-input:focus {
         font-size: 0.82rem;
         margin-top: 0.2rem;
         padding-top: 0.3rem;
+    }
+    input, textarea, select {
+        font-size: 16px !important;
     }
 }

@@ -391,6 +391,12 @@ function syncWordList() {
 }
 
 // ④ テキストエリアの内容を解析
+function isKnownMarker(str) {
+    if (!str) return false;
+    var s = str.trim();
+    return s === "✓" || s === "✔" || s === "済" || s === "（意味不要）";
+}
+
 function parseBulkText(text) {
     var lines = text.split("\n");
     var parsedList = [];
@@ -401,12 +407,19 @@ function parseBulkText(text) {
 
         var word = trimmed;
         var meaning = "";
+        var noMeaningNeeded = false;
 
         // コロン（半角: または全角：）、タブで分割
         var match = trimmed.match(/^([^:：\t]+)[:：\t](.*)$/);
         if (match) {
             word = match[1].trim();
-            meaning = cleanMeaning(match[2].trim());
+            var rawRight = match[2].trim();
+            if (isKnownMarker(rawRight)) {
+                meaning = "";
+                noMeaningNeeded = true;
+            } else {
+                meaning = cleanMeaning(rawRight);
+            }
         } else {
             word = trimmed;
             meaning = "";
@@ -415,7 +428,8 @@ function parseBulkText(text) {
         parsedList.push({
             id: "word-" + index,
             word: word,
-            meaning: meaning
+            meaning: meaning,
+            noMeaningNeeded: noMeaningNeeded
         });
     });
 
@@ -451,6 +465,7 @@ function setFilterTab(tab) {
 function createWordCardElement(item) {
     var isEditing = (editingWordId === item.id);
     var hasMeaning = Boolean(item.meaning && item.meaning.trim() !== "");
+    var isCompleted = hasMeaning || Boolean(item.noMeaningNeeded);
 
     var card = document.createElement("div");
     card.className = isEditing ? "word-card is-editing" : "word-card";
@@ -470,13 +485,25 @@ function createWordCardElement(item) {
     if (!isEditing) {
         var editBtn = document.createElement("button");
         editBtn.type = "button";
-        editBtn.className = hasMeaning ? "btn-card-action" : "btn-card-action btn-card-add";
-        editBtn.title = hasMeaning ? "意味を編集" : "意味を追加";
-        editBtn.textContent = hasMeaning ? "編集" : "＋意味";
+        editBtn.className = isCompleted ? "btn-card-action" : "btn-card-action btn-card-add";
+        editBtn.title = isCompleted ? "意味を編集" : "意味を追加";
+        editBtn.textContent = isCompleted ? "編集" : "＋意味";
         editBtn.addEventListener("click", function() {
             startInlineEdit(item.id);
         });
         actions.appendChild(editBtn);
+
+        if (!isCompleted) {
+            var knownBtn = document.createElement("button");
+            knownBtn.type = "button";
+            knownBtn.className = "btn-card-action btn-card-known";
+            knownBtn.title = "意味不要（分かる単語）として完了へ移動";
+            knownBtn.textContent = "✓";
+            knownBtn.addEventListener("click", function() {
+                markWordAsKnown(item.word);
+            });
+            actions.appendChild(knownBtn);
+        }
     }
 
     var delBtn = document.createElement("button");
@@ -557,10 +584,10 @@ function renderWordCards(filterKeyword) {
     }
 
     var withMeaningList = searchedList.filter(function(item) {
-        return item.meaning && item.meaning.trim() !== "";
+        return (item.meaning && item.meaning.trim() !== "") || Boolean(item.noMeaningNeeded);
     });
     var withoutMeaningList = searchedList.filter(function(item) {
-        return !item.meaning || item.meaning.trim() === "";
+        return (!item.meaning || item.meaning.trim() === "") && !item.noMeaningNeeded;
     });
 
     // 初回表示時、「意味あり」が0件で「意味なし」がある場合は自動で「意味なし」タブを選択
@@ -652,6 +679,37 @@ function renderWordCards(filterKeyword) {
             editInput.focus();
             editInput.select();
         }
+    }
+}
+
+// 「✓（意味不要・分かる）」ボタンを押したときに完了（意味あり側）へ移動
+function markWordAsKnown(targetWord) {
+    var text = localStorage.getItem("kuji_bulk_text") || "";
+    var lines = text.split("\n");
+    var updated = false;
+
+    for (var i = 0; i < lines.length; i++) {
+        var trimmed = lines[i].trim();
+        if (!trimmed) continue;
+
+        var word = trimmed;
+        var match = trimmed.match(/^([^:：\t]+)[:：\t]/);
+        if (match) {
+            word = match[1].trim();
+        }
+
+        if (word === targetWord) {
+            lines[i] = targetWord + " : ✓";
+            updated = true;
+            break;
+        }
+    }
+
+    if (updated) {
+        saveBulkText(lines.join("\n"), false);
+        var searchInput = document.getElementById("search-input");
+        var keyword = searchInput ? searchInput.value : "";
+        renderWordCards(keyword);
     }
 }
 
