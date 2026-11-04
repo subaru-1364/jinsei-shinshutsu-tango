@@ -329,28 +329,88 @@ function returnToIndex(event) {
     }
 }
 
-// 新規追加（複数行まとめて最下部へ追加＋意味省略時は辞書から自動取得）
+// 単語行から単語名（左側）を抽出
+function extractWordKeyFromLine(line) {
+    var trimmed = (line || "").trim();
+    if (!trimmed) return "";
+    var m = trimmed.match(/^([^:：\t]+)[:：\t]?/);
+    return m ? m[1].trim() : trimmed;
+}
+
+// アプリ全体（すべてのシート）で単語がすでに登録されているかチェック
+function findExistingWordLocation(targetWord) {
+    var cleanTarget = (targetWord || "").trim();
+    if (!cleanTarget) return null;
+
+    var allKeys = Object.keys(sheetLines);
+    for (var k = 0; k < allKeys.length; k++) {
+        var bId = allKeys[k];
+        var lines = sheetLines[bId] || [];
+        for (var i = 0; i < lines.length; i++) {
+            var w = extractWordKeyFromLine(lines[i]);
+            if (w === cleanTarget) {
+                return { bookId: bId, bookTitle: getBookTitleById(bId), line: lines[i] };
+            }
+        }
+    }
+    return null;
+}
+
+// 新規追加（複数行まとめて最下部へ追加＋重複自動スキップ＋意味省略時は辞書から自動取得）
 function addQuickWord() {
     var input = document.getElementById("quick-add-input");
     if (!input) return;
     var raw = input.value.trim();
     if (!raw) return;
 
+    var rawLines = raw.split("\n").map(function(l) { return l.trim(); }).filter(Boolean);
+    if (rawLines.length === 0) return;
+
     var editBookId = getEffectiveBookIdForEdit();
     var textarea = document.getElementById("bulk-input");
-    var current = textarea ? textarea.value : ((sheetLines[editBookId] || []).join("\n"));
-    var newText = current.trim() ? (current.replace(/\s+$/, "") + "\n" + raw) : raw;
 
-    sheetLines[editBookId] = newText.split("\n").filter(function(l) { return l.trim() !== ""; });
-    input.value = "";
-
-    var addedLines = raw.split("\n").map(function(l) { return l.trim(); }).filter(Boolean);
+    var validLinesToAdd = [];
     var wordsNeedingAutoMeaning = [];
-    addedLines.forEach(function(l) {
-        if (!/[:：\t]/.test(l)) {
-            wordsNeedingAutoMeaning.push(l);
+    var skippedWords = [];
+    var seenInCurrentInput = {};
+
+    rawLines.forEach(function(line) {
+        var w = extractWordKeyFromLine(line);
+        if (!w) return;
+
+        // 同じ入力内での重複防止
+        if (seenInCurrentInput[w]) {
+            return;
+        }
+        seenInCurrentInput[w] = true;
+
+        // アプリ全体での重複チェック（重複は自動で弾く）
+        var existing = findExistingWordLocation(w);
+        if (existing) {
+            skippedWords.push("「" + w + "」(" + existing.bookTitle + "に登録済)");
+            return;
+        }
+
+        validLinesToAdd.push(line);
+        if (!/[:：\t]/.test(line)) {
+            wordsNeedingAutoMeaning.push(w);
         }
     });
+
+    input.value = "";
+
+    // すべて重複していた場合
+    if (validLinesToAdd.length === 0) {
+        var skipMsg = skippedWords.length === 1
+            ? (skippedWords[0] + "は登録済みのためスキップしました")
+            : (skippedWords.length + "件の単語はすべて登録済みのためスキップしました");
+        showSaveFeedback(skipMsg);
+        return;
+    }
+
+    // 有効な単語のみを最下部へ追加
+    var currentLines = sheetLines[editBookId] || [];
+    sheetLines[editBookId] = currentLines.concat(validLinesToAdd);
 
     var targetTab = wordsNeedingAutoMeaning.length > 0 ? "none" : "has";
     sessionStorage.setItem("kuji_filter_tab", targetTab);
@@ -363,11 +423,19 @@ function addQuickWord() {
     }
     refreshUI();
 
+    var feedbackMsg = "";
+    if (skippedWords.length > 0) {
+        feedbackMsg = validLinesToAdd.length + "件を追加（" + skippedWords.length + "件は登録済みのためスキップ）";
+    } else {
+        feedbackMsg = validLinesToAdd.length + "件を追加・保存しました";
+    }
+
     if (wordsNeedingAutoMeaning.length > 0) {
-        showSaveFeedback("最下部に追加・辞書から意味を検索中...");
+        feedbackMsg += "・辞書から意味を検索中...";
+        showSaveFeedback(feedbackMsg);
         autoFillMeaningsForSheetWords(editBookId, wordsNeedingAutoMeaning);
     } else {
-        showSaveFeedback("最下部に追加・保存しました");
+        showSaveFeedback(feedbackMsg);
     }
 }
 
@@ -2476,22 +2544,16 @@ function saveInlineMeaning(id, bookId, targetWord, wasNoMeaningNeeded) {
     }
 }
 
-// ⑧ 単語の削除
+// ⑧ 単語の削除（重複登録されている場合もすべてのシートから一括削除して復活を防止）
 function deleteWordFromSheet(bookId, targetWord) {
     if (!confirm("「" + targetWord + "」を削除しますか？")) return;
 
-    var targetBook = bookId || "uncategorized";
-    var lines = sheetLines[targetBook] || [];
-
-    sheetLines[targetBook] = lines.filter(function(line) {
-        var trimmed = line.trim();
-        if (!trimmed) return false;
-        var word = trimmed;
-        var match = trimmed.match(/^([^:：\t]+)[:：\t]/);
-        if (match) {
-            word = match[1].trim();
-        }
-        return word !== targetWord;
+    Object.keys(sheetLines).forEach(function(bId) {
+        var lines = sheetLines[bId] || [];
+        sheetLines[bId] = lines.filter(function(line) {
+            var word = extractWordKeyFromLine(line);
+            return word !== targetWord;
+        });
     });
 
     saveAllSheets(false);
