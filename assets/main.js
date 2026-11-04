@@ -283,13 +283,18 @@ function collectCurrentSheetLines() {
 // 「保存する」ボタンによる明示的保存
 function saveEditorExplicit() {
     collectCurrentSheetLines();
+    var hasDup = deduplicateAllSheets();
     if (cloudSaveTimer) {
         clearTimeout(cloudSaveTimer);
         cloudSaveTimer = null;
     }
     saveAllSheets(false);
     refreshUI();
-    showSaveFeedback("保存しました");
+    if (hasDup) {
+        showSaveFeedback("保存しました（他シートと重複した単語を自動統合しました）");
+    } else {
+        showSaveFeedback("保存しました");
+    }
 }
 
 function showSaveFeedback(msg) {
@@ -333,13 +338,67 @@ function returnToIndex(event) {
 function extractWordKeyFromLine(line) {
     var trimmed = (line || "").trim();
     if (!trimmed) return "";
-    var m = trimmed.match(/^([^:：\t]+)[:：\t]?/);
-    return m ? m[1].trim() : trimmed;
+    var m = trimmed.match(/^([^:：\t]+)(?:[:：\t]|$)/);
+    var rawWord = m ? m[1].trim() : trimmed;
+    return rawWord.replace(/\s+/g, " ").trim();
+}
+
+// 全シート間で単語の重複を自動排除（意味あり・書籍シート側を優先保持）
+function deduplicateAllSheets() {
+    var seen = {};
+    var duplicateFound = false;
+
+    var bookIds = bookList.map(function(b) { return b.id; });
+    var orderedSheetIds = bookIds.concat(["uncategorized"]);
+
+    orderedSheetIds.forEach(function(bId) {
+        var lines = sheetLines[bId] || [];
+        lines.forEach(function(line) {
+            var w = extractWordKeyFromLine(line);
+            if (!w) return;
+            var norm = w.toLowerCase();
+            var hasMeaning = /[:：\t]/.test(line);
+            var isBook = (bId !== "uncategorized");
+
+            if (!seen[norm]) {
+                seen[norm] = { bookId: bId, line: line, hasMeaning: hasMeaning, isBook: isBook };
+            } else {
+                duplicateFound = true;
+                var curr = seen[norm];
+                // 意味がある方を優先
+                if (!curr.hasMeaning && hasMeaning) {
+                    seen[norm] = { bookId: bId, line: line, hasMeaning: hasMeaning, isBook: isBook };
+                }
+                // 意味の有無が同じなら、書籍シート側を優先（未分類のダブりを消す）
+                else if (curr.hasMeaning === hasMeaning && !curr.isBook && isBook) {
+                    seen[norm] = { bookId: bId, line: line, hasMeaning: hasMeaning, isBook: isBook };
+                }
+            }
+        });
+    });
+
+    if (!duplicateFound) return false;
+
+    var newSheetLines = {};
+    Object.keys(sheetLines).forEach(function(bId) {
+        newSheetLines[bId] = [];
+    });
+
+    Object.keys(seen).forEach(function(norm) {
+        var item = seen[norm];
+        if (!newSheetLines[item.bookId]) {
+            newSheetLines[item.bookId] = [];
+        }
+        newSheetLines[item.bookId].push(item.line);
+    });
+
+    sheetLines = newSheetLines;
+    return true;
 }
 
 // アプリ全体（すべてのシート）で単語がすでに登録されているかチェック
 function findExistingWordLocation(targetWord) {
-    var cleanTarget = (targetWord || "").trim();
+    var cleanTarget = (targetWord || "").trim().toLowerCase();
     if (!cleanTarget) return null;
 
     var allKeys = Object.keys(sheetLines);
@@ -348,7 +407,7 @@ function findExistingWordLocation(targetWord) {
         var lines = sheetLines[bId] || [];
         for (var i = 0; i < lines.length; i++) {
             var w = extractWordKeyFromLine(lines[i]);
-            if (w === cleanTarget) {
+            if (w.toLowerCase() === cleanTarget) {
                 return { bookId: bId, bookTitle: getBookTitleById(bId), line: lines[i] };
             }
         }
@@ -1899,6 +1958,16 @@ function isKnownMarker(str) {
 function syncWordList() {
     var text = localStorage.getItem("kuji_bulk_text") || "";
     parseFullBulkData(text);
+    // すでに存在する全シート間の重複を自動クリーンアップ（意味あり・書籍側を優先保持）
+    if (deduplicateAllSheets()) {
+        var cleanText = serializeFullBulkData();
+        localStorage.setItem("kuji_bulk_text", cleanText);
+        localStorage.setItem("kuji_items", cleanText);
+        parseFullBulkData(cleanText);
+        if (currentUser && fbDb) {
+            pushLocalToCloud(cleanText, Date.now());
+        }
+    }
 }
 
 function parseFullBulkData(text) {
