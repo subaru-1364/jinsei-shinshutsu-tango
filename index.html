@@ -8,86 +8,124 @@
     <link rel="icon" type="image/png" href="./assets/icon.png?v=6">
     <link rel="apple-touch-icon" href="./assets/icon.png?v=6">
 
-    <link rel="stylesheet" href="./assets/main.css?v=25">
+    <link rel="stylesheet" href="./assets/main.css?v=29">
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js" defer></script>
-    <script src="./assets/main.js?v=25" defer></script>
+    <script src="./assets/main.js?v=29" defer></script>
 </head>
 <body>
     <div class="app-wrapper">
-        <!-- ヘッダー -->
-        <header class="app-header">
-            <div class="header-content">
-                <div class="header-text">
-                    <h1 class="app-title">人生新出単語</h1>
-                </div>
-            </div>
-            <div class="header-actions">
-                <div id="auth-bar" class="auth-bar">
-                    <span id="sync-status" class="sync-status">未同期</span>
-                    <button type="button" id="auth-btn" class="btn-auth" onclick="handleAuthClick()">Google同期</button>
-                </div>
-                <a href="./edit.html" class="btn btn-nav">
-                    <svg class="icon-line" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.2v9.6M3.2 8h9.6"/></svg>
-                    単語を登録・編集
-                </a>
-            </div>
-        </header>
-
-        <!-- ランダムくじ引き -->
-        <section class="card draw-section">
-            <div class="draw-row">
-                <span class="sub-title">
-                    <svg class="icon-line icon-subtle" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 5.5h8.5l-2-2M13.5 10.5H5l2 2"/></svg>
-                    ランダムピックアップ
-                </span>
-                <button id="draw-btn" class="btn btn-primary btn-draw-compact" onclick="drawWord()">
-                    引く
-                </button>
-            </div>
-            
-            <div id="draw-result" class="draw-result-box" style="display: none;" aria-live="polite">
-                <div id="result-word" class="result-word"></div>
-                <div id="result-meaning" class="result-meaning"></div>
-            </div>
+        <!-- 未ログイン時の専用ゲート画面（ログイン必須） -->
+        <section id="login-gate" class="card login-gate-card">
+            <img src="./assets/icon.png?v=6" alt="人生新出単語アイコン" class="gate-icon">
+            <h1 class="gate-title">人生新出単語</h1>
+            <p id="gate-message" class="gate-desc">ログイン状態を確認しています...</p>
+            <button type="button" id="gate-login-btn" class="btn btn-primary btn-gate-login" onclick="handleAuthClick()" style="display: none;">
+                Googleでログインして始める
+            </button>
         </section>
 
-        <!-- 単語一覧・検索 -->
-        <section class="card list-card">
-            <div class="list-header">
-                <div class="list-title-wrap">
-                    <h2 class="card-title">
-                        <svg class="icon-line" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M5.5 6.5h5M5.5 9.5h3"/></svg>
-                        登録単語
-                    </h2>
-                    <span id="filtered-count" class="count-badge">0 件</span>
+        <!-- ログイン後に表示されるメイン画面 -->
+        <div id="app-main" class="app-main" style="display: none;">
+            <!-- ヘッダー -->
+            <header class="app-header">
+                <div class="header-content">
+                    <div class="header-text">
+                        <h1 class="app-title">人生新出単語</h1>
+                    </div>
                 </div>
-            </div>
+                <div class="header-actions">
+                    <div id="auth-bar" class="auth-bar">
+                        <span id="sync-status" class="sync-status">同期中</span>
+                        <button type="button" id="auth-btn" class="btn-auth" onclick="handleAuthClick()">ログアウト</button>
+                    </div>
+                    <a href="./edit.html" class="btn btn-nav">
+                        <svg class="icon-line" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.2v9.6M3.2 8h9.6"/></svg>
+                        単語を登録・編集
+                    </a>
+                </div>
+            </header>
 
-            <!-- 意味あり / 意味なし 切り替えタブ -->
-            <div class="filter-tabs" role="tablist" aria-label="単語の表示切り替え">
-                <button type="button" id="tab-has-meaning" class="filter-tab active" onclick="setFilterTab('has')">
-                    意味あり <span id="count-has-meaning" class="tab-count">0</span>
-                </button>
-                <button type="button" id="tab-no-meaning" class="filter-tab" onclick="setFilterTab('none')">
-                    意味なし <span id="count-no-meaning" class="tab-count">0</span>
-                </button>
-                <button type="button" id="tab-all" class="filter-tab" onclick="setFilterTab('all')">
-                    すべて <span id="count-all" class="tab-count">0</span>
-                </button>
-            </div>
+            <!-- 本棚（ISBN / 書籍ごと）セレクター -->
+            <section class="card book-shelf-card">
+                <div class="book-shelf-top">
+                    <span class="sub-title">
+                        <svg class="icon-line icon-subtle" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h4.2c1 0 1.3.4 1.3 1.2v8.3c0-.6-.5-1-1.3-1H2.5V3.5zm11 0H9.3c-1 0-1.3.4-1.3 1.2v8.3c0-.6.5-1 1.3-1h4.2V3.5z"/></svg>
+                        本棚（書籍別シート）
+                    </span>
+                    <button type="button" class="btn-isbn-toggle" onclick="toggleIsbnPanel()">＋ 本(ISBN)を追加</button>
+                </div>
 
-            <!-- 検索バー -->
-            <div class="search-box">
-                <svg class="search-svg" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2L13.5 13.5"/></svg>
-                <input type="text" id="search-input" placeholder="検索..." oninput="handleSearch()">
-            </div>
+                <div id="isbn-panel" class="isbn-panel" style="display: none;">
+                    <div class="isbn-input-row">
+                        <input type="text" id="isbn-input" placeholder="ISBN（例: 9784101010014）または書名" onkeydown="handleIsbnKey(event)">
+                        <button type="button" id="isbn-submit-btn" class="btn-quick-add" onclick="addBookByIsbn()">追加</button>
+                    </div>
+                    <div id="isbn-status" class="isbn-status">ISBNコードを入れると書名・著者を自動取得します（書名の直接入力も可）</div>
+                </div>
 
-            <!-- 単語カード一覧コンテナ -->
-            <div id="word-list" class="word-list" role="list">
-            </div>
-        </section>
+                <div id="book-tabs" class="book-tabs" role="tablist" aria-label="書籍の切り替え"></div>
+                <div id="active-book-meta" class="active-book-meta" style="display: none;"></div>
+            </section>
+
+            <!-- ランダムくじ引き（山札シャッフル方式） -->
+            <section class="card draw-section">
+                <div class="draw-row">
+                    <div class="draw-title-group">
+                        <span class="sub-title">
+                            <svg class="icon-line icon-subtle" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 5.5h8.5l-2-2M13.5 10.5H5l2 2"/></svg>
+                            ランダムピックアップ
+                        </span>
+                        <span id="draw-deck-info" class="draw-deck-info"></span>
+                    </div>
+                    <button id="draw-btn" class="btn btn-primary btn-draw-compact" onclick="drawWord()">
+                        引く
+                    </button>
+                </div>
+                
+                <div id="draw-result" class="draw-result-box" style="display: none;" aria-live="polite">
+                    <div id="result-word" class="result-word"></div>
+                    <div id="result-meaning" class="result-meaning"></div>
+                </div>
+            </section>
+
+            <!-- 単語一覧・検索 -->
+            <section class="card list-card">
+                <div class="list-header">
+                    <div class="list-title-wrap">
+                        <h2 class="card-title">
+                            <svg class="icon-line" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M5.5 6.5h5M5.5 9.5h3"/></svg>
+                            登録単語
+                        </h2>
+                        <span id="filtered-count" class="count-badge">0 件</span>
+                    </div>
+                </div>
+
+                <!-- 意味あり / 意味なし 切り替えタブ -->
+                <div class="filter-tabs" role="tablist" aria-label="単語の表示切り替え">
+                    <button type="button" id="tab-has-meaning" class="filter-tab active" onclick="setFilterTab('has')">
+                        意味あり <span id="count-has-meaning" class="tab-count">0</span>
+                    </button>
+                    <button type="button" id="tab-no-meaning" class="filter-tab" onclick="setFilterTab('none')">
+                        意味なし <span id="count-no-meaning" class="tab-count">0</span>
+                    </button>
+                    <button type="button" id="tab-all" class="filter-tab" onclick="setFilterTab('all')">
+                        すべて <span id="count-all" class="tab-count">0</span>
+                    </button>
+                </div>
+
+                <!-- 検索バー -->
+                <div class="search-box">
+                    <svg class="search-svg" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2L13.5 13.5"/></svg>
+                    <input type="text" id="search-input" placeholder="検索..." oninput="handleSearch()">
+                </div>
+
+                <!-- 単語カード一覧コンテナ -->
+                <div id="word-list" class="word-list" role="list">
+                </div>
+            </section>
+        </div>
     </div>
 </body>
 </html>
