@@ -864,8 +864,13 @@ function selectBookTab(bookId) {
         collectCurrentSheetLines();
         saveAllSheets(true);
     }
-    currentBookTab = bookId;
-    sessionStorage.setItem("kuji_book_tab", bookId);
+    if (currentBookTab !== bookId) {
+        currentBookTab = bookId;
+        sessionStorage.setItem("kuji_book_tab", bookId);
+        // タブ切り替え時は前のシートの山札をクリアして新しいプールで再構築
+        drawDeck = [];
+        lastPoolSignature = "";
+    }
     refreshUI();
 }
 
@@ -2561,13 +2566,17 @@ function syncDrawDeckWithPool(pool) {
         validSet[w.bookId + "::" + w.word] = w;
     });
 
+    // タブ（対象シート）やプールが切り替わった場合は、山札を新しいプールの全単語で再構築
     if (sig !== lastPoolSignature) {
         lastPoolSignature = sig;
-        drawDeck = drawDeck.filter(function(k) { return Boolean(validSet[k]); });
-    } else {
-        drawDeck = drawDeck.filter(function(k) { return Boolean(validSet[k]); });
+        drawDeck = buildShuffledDeck(pool);
+        return;
     }
 
+    // 同じタブ内で単語が削除・編集された場合は無効なキーを除去
+    drawDeck = drawDeck.filter(function(k) { return Boolean(validSet[k]); });
+
+    // 山札が尽きたら新しい山札をシャッフル生成（一巡完了）
     if (drawDeck.length === 0 && pool.length > 0) {
         drawDeck = buildShuffledDeck(pool);
     }
