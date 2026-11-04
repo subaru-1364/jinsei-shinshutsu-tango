@@ -105,6 +105,20 @@ window.addEventListener("DOMContentLoaded", function() {
     initFirebase();
 });
 
+// 画面離脱時（ブラウザバック、タブ閉じ、リンク遷移）に編集中の内容を確実に自動保存
+window.addEventListener("pagehide", function() {
+    if (isEditPage()) {
+        collectCurrentSheetLines();
+        saveAllSheets(false);
+    }
+});
+window.addEventListener("beforeunload", function() {
+    if (isEditPage()) {
+        collectCurrentSheetLines();
+        saveAllSheets(false);
+    }
+});
+
 function setGateVisibility(isLoggedIn, messageText, showButton) {
     var gate = document.getElementById("login-gate");
     var main = document.getElementById("app-main");
@@ -594,8 +608,11 @@ function searchBookViaWikipediaAndOpenBd(keyword) {
                     if (authMatch && !fallbackAuthor) {
                         fallbackAuthor = cleanWikitextMarkup(authMatch[1]);
                     } else if (!fallbackAuthor && p.title !== keyword) {
-                        // 『箱庭図書館』が作家「乙一」のページ内でヒットした場合など、ページタイトルを著者候補にする
-                        fallbackAuthor = p.title;
+                        // 記事が「作家」「小説家」「著作家」に関する記事である場合のみ著者候補とする（無関係な人物ページ等を誤認識しないガード）
+                        var isWriterPage = /小説家|作家|文学者|著作家|随筆家/.test(wt.slice(0, 800));
+                        if (isWriterPage) {
+                            fallbackAuthor = p.title;
+                        }
                     }
 
                     // キーワードが記事内に複数回登場する場合（目次＋作品リストなど）、すべての登場箇所周辺からISBNを探す
@@ -1036,6 +1053,16 @@ function renderActiveBookMeta() {
     metaBox.appendChild(delBookBtn);
 }
 
+// 次の共通アーカイブシート名（「共通 1」「共通 2」…）を自動採番
+function getNextArchiveSheetTitle() {
+    var existingTitles = bookList.map(function(b) { return b.title; });
+    var count = 1;
+    while (existingTitles.indexOf("共通 " + count) !== -1 || existingTitles.indexOf("共通" + count) !== -1) {
+        count++;
+    }
+    return "共通 " + count;
+}
+
 // 未分類が50単語（および50件刻みの節目：100, 150...）に達した際のお祝い＆切り出し提案バナー
 function checkMilestoneBanner() {
     var banner = document.getElementById("milestone-banner");
@@ -1060,10 +1087,7 @@ function checkMilestoneBanner() {
         return;
     }
 
-    var now = new Date();
-    var dateStr = now.getFullYear() + "/" +
-        String(now.getMonth() + 1).padStart(2, "0") + "/" +
-        String(now.getDate()).padStart(2, "0");
+    var targetTitle = getNextArchiveSheetTitle();
 
     banner.textContent = "";
     banner.style.display = "flex";
@@ -1078,12 +1102,12 @@ function checkMilestoneBanner() {
 
     var titleSpan = document.createElement("div");
     titleSpan.className = "milestone-title";
-    titleSpan.textContent = "未分類が " + count + " 単語に達しました！（" + dateStr + "）";
+    titleSpan.textContent = "未分類が " + count + " 単語に達しました！";
     textDiv.appendChild(titleSpan);
 
     var descSpan = document.createElement("div");
     descSpan.className = "milestone-desc";
-    descSpan.textContent = "「共通 (〜" + dateStr + ")」シートへ切り出して、未分類をすっきりリセットしますか？";
+    descSpan.textContent = "「" + targetTitle + "」シートへ切り出して、未分類をすっきりリセットしますか？";
     textDiv.appendChild(descSpan);
 
     banner.appendChild(textDiv);
@@ -1096,7 +1120,7 @@ function checkMilestoneBanner() {
     archiveBtn.className = "btn-milestone-action";
     archiveBtn.textContent = "今すぐ切り出す";
     archiveBtn.addEventListener("click", function() {
-        archiveUncategorizedSheet(dateStr);
+        archiveUncategorizedSheet(targetTitle);
     });
     btnGroup.appendChild(archiveBtn);
 
@@ -1114,8 +1138,8 @@ function checkMilestoneBanner() {
     banner.appendChild(btnGroup);
 }
 
-// 「未分類（共通）」に溜まった単語を名前付きシート（例：「共通 (〜2026/11/04)」）へ丸ごと切り出して空にする
-function archiveUncategorizedSheet(customDateStr) {
+// 「未分類（共通）」に溜まった単語を名前付きシート（例：「共通 1」）へ丸ごと切り出して空にする
+function archiveUncategorizedSheet(customSheetName) {
     if (isEditPage()) {
         collectCurrentSheetLines();
     }
@@ -1125,11 +1149,7 @@ function archiveUncategorizedSheet(customDateStr) {
         return;
     }
 
-    var now = new Date();
-    var dateStr = customDateStr || (now.getFullYear() + "/" +
-        String(now.getMonth() + 1).padStart(2, "0") + "/" +
-        String(now.getDate()).padStart(2, "0"));
-    var defaultName = "共通 (〜" + dateStr + ")";
+    var defaultName = customSheetName || getNextArchiveSheetTitle();
     var sheetName = prompt(
         "未分類（共通）にある " + lines.length + " 件の単語を新しいシートへ切り出します。\n" +
         "切り出し先のシート名を入力してください（切り出し後、未分類シートは0件になり新しく使い始められます）：",
@@ -1712,26 +1732,38 @@ function startCloudSync(user) {
             var cloudText = (data && typeof data.bulkText === "string") ? data.bulkText : "";
             var cloudUpdatedAt = (data && typeof data.clientUpdatedAt === "number") ? data.clientUpdatedAt : 0;
 
-            if (hasPendingLocal && localUpdatedAt >= cloudUpdatedAt) {
-                pushLocalToCloud(localText, localUpdatedAt);
+            // ① ローカルに未送信の変更がある、またはローカルの更新日時のほうが新しい場合は、ローカルを最優先保護
+            if (hasPendingLocal || localUpdatedAt > cloudUpdatedAt) {
+                if (localText.trim()) {
+                    pushLocalToCloud(localText, localUpdatedAt || Date.now());
+                }
                 return;
             }
 
+            // ② クラウドが空でローカルにデータがある場合もローカルを保護してクラウドへ送信
             if (!cloudText.trim() && localText.trim()) {
                 pushLocalToCloud(localText, Date.now());
                 return;
             }
 
+            // ③ クラウドのほうが確実に新しい（cloudUpdatedAt > localUpdatedAt）場合のみローカルを更新
             if (cloudText !== localText) {
-                localStorage.setItem("kuji_bulk_text", cloudText);
-                localStorage.setItem("kuji_items", cloudText);
+                if (cloudUpdatedAt >= localUpdatedAt) {
+                    localStorage.setItem("kuji_bulk_text", cloudText);
+                    localStorage.setItem("kuji_items", cloudText);
+                    localStorage.setItem("kuji_updated_at", String(cloudUpdatedAt));
+                    localStorage.removeItem("kuji_pending_sync");
+                    syncWordList();
+                    refreshUI();
+                }
+            } else {
                 localStorage.removeItem("kuji_pending_sync");
-                syncWordList();
-                refreshUI();
             }
             updateSyncStatus("同期済み", true);
         } else {
-            pushLocalToCloud(localText, Date.now());
+            if (localText.trim()) {
+                pushLocalToCloud(localText, Date.now());
+            }
         }
     }, function(err) {
         console.error("Snapshot error:", err);

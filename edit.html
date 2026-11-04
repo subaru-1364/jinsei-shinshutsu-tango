@@ -8,11 +8,11 @@
     <link rel="icon" type="image/png" href="./assets/icon.png?v=6">
     <link rel="apple-touch-icon" href="./assets/icon.png?v=6">
 
-    <link rel="stylesheet" href="./assets/main.css?v=48">
+    <link rel="stylesheet" href="./assets/main.css?v=51">
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js" defer></script>
-    <script src="./assets/main.js?v=48" defer></script>
+    <script src="./assets/main.js?v=51" defer></script>
 </head>
 <body>
     <div class="app-wrapper">
@@ -88,7 +88,7 @@
                                 <input type="checkbox" id="confirm-meaning-toggle" onchange="handleConfirmSettingChange(this.checked)">
                                 <span>意味を確認する</span>
                             </label>
-                            <button type="button" class="btn-quick-add" onclick="addQuickWord()">追加して保存</button>
+                            <button type="button" class="btn-quick-add" onclick="addQuickWord()">追加</button>
                         </div>
                     </div>
                     <textarea id="quick-add-input" rows="3" placeholder="新しい単語を入力（改行で複数一気に追加できます&#10;単語だけで入力すると辞書から意味を自動取得します）"></textarea>
@@ -97,8 +97,9 @@
                 <div class="editor-header">
                     <span id="editor-sheet-title" class="editor-guide">このシートのテキスト編集（<code>単語 : 意味</code>）</span>
                     <div class="editor-header-right">
-                        <button type="button" id="batch-dict-btn" class="btn-jump-bottom" onclick="batchFetchMissingMeanings()">辞書から意味を一括補完</button>
-                        <button type="button" class="btn-jump-bottom" onclick="jumpToBulkBottom()">↓ 最下部へ</button>
+                        <span id="save-feedback" class="save-feedback" aria-live="polite"></span>
+                        <button type="button" id="save-btn" class="btn-save-explicit" onclick="saveEditorExplicit()">保存する</button>
+                        <button type="button" id="batch-dict-btn" class="btn-jump-bottom" onclick="batchFetchMissingMeanings()">辞書補完</button>
                         <span id="word-count" class="count-badge">0 件</span>
                     </div>
                 </div>
@@ -108,10 +109,6 @@
                 </div>
 
                 <div class="editor-page-actions">
-                    <div class="save-action-group">
-                        <button type="button" id="save-btn" class="btn-save-explicit" onclick="saveEditorExplicit()">保存する</button>
-                        <span id="save-feedback" class="save-feedback" aria-live="polite"></span>
-                    </div>
                     <div class="editor-sub-btns">
                         <button type="button" class="btn btn-sub" onclick="clearAllWords()">このシートを全消去</button>
                     </div>
