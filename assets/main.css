@@ -648,7 +648,7 @@ body {
 /* 単語カードリスト（インデックスカード風デザイン） */
 .word-list {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
     gap: 0.6rem;
 }
 
@@ -728,6 +728,7 @@ body {
 }
 
 .word-term-wrap {
+    flex: 1;
     display: flex;
     align-items: center;
     gap: 0.4rem;

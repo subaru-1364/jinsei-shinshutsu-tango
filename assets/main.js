@@ -639,6 +639,35 @@ function renderActiveBookMeta() {
 
 // ==================== Wiktionary / Wikipedia 意味の自動取得 ====================
 
+// 「踵　かかと」「踵（かかと）」のように漢字＋読み仮名で入力された場合も分解して検索対象にする
+function extractSearchTerms(rawWord) {
+    var terms = [];
+    var s = (rawWord || "").trim();
+    if (!s) return terms;
+
+    // 括弧内の読みや別表記を抽出（例: 踵（かかと） -> 踵, かかと）
+    var parenMatches = s.match(/[（\x28]([^）\x29]+)[）\x29]/g);
+    var withoutParens = s.replace(/[（\x28][^）\x29]+[）\x29]/g, " ").trim();
+
+    // 全角・半角スペースで分割（例: 踵　かかと -> 踵, かかと）
+    var parts = withoutParens.split(/[\s　]+/).filter(Boolean);
+    parts.forEach(function(p) {
+        if (terms.indexOf(p) === -1) terms.push(p);
+    });
+
+    if (parenMatches) {
+        parenMatches.forEach(function(pm) {
+            var inner = pm.slice(1, -1).trim();
+            if (inner && terms.indexOf(inner) === -1) terms.push(inner);
+        });
+    }
+
+    if (terms.indexOf(s) === -1) {
+        terms.push(s);
+    }
+    return terms;
+}
+
 function fetchWordMeaningCandidates(word) {
     var cleanW = (word || "").trim();
     if (!cleanW) return Promise.resolve([]);
@@ -646,25 +675,32 @@ function fetchWordMeaningCandidates(word) {
         return Promise.resolve(meaningCandidatesCache[cleanW]);
     }
 
+    var searchTerms = extractSearchTerms(cleanW);
     var candidates = [];
 
-    // 1. Wiktionary（日本語版ウィクショナリー：国語辞典データ・完全無料・登録不要）
-    var wiktUrl = "https://ja.wiktionary.org/w/api.php?action=query&prop=extracts&explaintext=1&redirects=1&titles=" +
-                  encodeURIComponent(cleanW) + "&format=json&origin=*";
+    // 1. Wiktionary（wikitextの「# 意味」定義行＋読み仮名を直接解析・複数キーワード一括検索）
+    var titlesParam = searchTerms.map(function(t) { return encodeURIComponent(t); }).join("|");
+    var wiktRevUrl = "https://ja.wiktionary.org/w/api.php?action=query&prop=revisions&rvprop=content&redirects=1&titles=" +
+                     titlesParam + "&format=json&origin=*";
 
-    return fetch(wiktUrl)
+    return fetch(wiktRevUrl)
         .then(function(res) { return res.json(); })
         .then(function(data) {
             if (data && data.query && data.query.pages) {
                 var pages = data.query.pages;
                 Object.keys(pages).forEach(function(pid) {
-                    if (pid !== "-1" && pages[pid].extract) {
-                        var extracted = parseWiktionaryExtract(pages[pid].extract, cleanW);
-                        extracted.forEach(function(c) {
-                            if (candidates.indexOf(c) === -1 && candidates.length < 4) {
-                                candidates.push(c);
-                            }
-                        });
+                    var page = pages[pid];
+                    if (pid !== "-1" && page.revisions && page.revisions[0]) {
+                        var rev = page.revisions[0];
+                        var rawWikitext = rev["*"] || (rev.slots && rev.slots.main && rev.slots.main["*"]) || "";
+                        if (rawWikitext) {
+                            var defs = parseWiktionaryWikitext(rawWikitext, page.title || cleanW);
+                            defs.forEach(function(d) {
+                                if (candidates.indexOf(d) === -1 && candidates.length < 4) {
+                                    candidates.push(d);
+                                }
+                            });
+                        }
                     }
                 });
             }
@@ -675,64 +711,105 @@ function fetchWordMeaningCandidates(word) {
                 meaningCandidatesCache[cleanW] = candidates;
                 return candidates;
             }
-            // 2. Wikipedia（日本語版ウィキペディア：専門用語・新語に強い・完全無料）
-            var wikiUrl = "https://ja.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(cleanW);
-            return fetch(wikiUrl)
-                .then(function(res) {
-                    if (!res.ok) return null;
-                    return res.json();
-                })
-                .then(function(summary) {
-                    if (summary && summary.extract && summary.type !== "disambiguation") {
-                        var wikiDef = cleanWikipediaSummary(summary.extract);
-                        if (wikiDef && candidates.indexOf(wikiDef) === -1) {
-                            candidates.push(wikiDef);
-                        }
-                    }
-                    meaningCandidatesCache[cleanW] = candidates;
-                    return candidates;
-                })
-                .catch(function() {
-                    meaningCandidatesCache[cleanW] = candidates;
-                    return candidates;
+            // 2. Wikipedia（各キーワードで順番に検索：「踵」や「かかと」の解説文を取得）
+            var wikiChain = Promise.resolve();
+            searchTerms.forEach(function(term) {
+                wikiChain = wikiChain.then(function() {
+                    if (candidates.length >= 3) return;
+                    var wikiUrl = "https://ja.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(term);
+                    return fetch(wikiUrl)
+                        .then(function(res) {
+                            if (!res.ok) return null;
+                            return res.json();
+                        })
+                        .then(function(summary) {
+                            if (summary && summary.extract && summary.type !== "disambiguation") {
+                                var wikiDef = cleanWikipediaSummary(summary.extract);
+                                if (wikiDef && candidates.indexOf(wikiDef) === -1) {
+                                    candidates.push(wikiDef);
+                                }
+                            }
+                        })
+                        .catch(function() {});
                 });
+            });
+
+            return wikiChain.then(function() {
+                meaningCandidatesCache[cleanW] = candidates;
+                return candidates;
+            });
         });
 }
 
-function parseWiktionaryExtract(extractText, targetWord) {
+function cleanWikitextMarkup(str) {
+    if (!str) return "";
+    var s = str;
+    // <ref>タグやHTMLコメントを除去
+    s = s.replace(/<ref[^>]*>[\s\S]*?<\/ref>/gi, "").replace(/<ref[^>]*\/>/gi, "");
+    s = s.replace(/<!--[\s\S]*?-->/g, "");
+    // rubyテンプレートを漢字（かな）に変換
+    s = s.replace(/\{\{ruby\|([^|\x7d]+)\|([^|\x7d]+)[^\x7d]*\}\}/gi, "$1（$2）");
+    // その他のテンプレートを除去
+    while (/\{\{[^\x7b\x7d]*\}\}/.test(s)) {
+        s = s.replace(/\{\{[^\x7b\x7d]*\}\}/g, "");
+    }
+    // [[リンク先|表示名]] -> 表示名、[[リンク名]] -> リンク名
+    s = s.replace(/\[\[(?:[^|\]]+\|)?([^\]]+)\]\]/g, "$1");
+    // 太字・斜体マークアップ除去
+    s = s.replace(/'''+/g, "").replace(/''/g, "");
+    // HTMLタグ除去
+    s = s.replace(/<[^>]+>/g, "");
+    return s.replace(/\s+/g, " ").trim();
+}
+
+function parseWiktionaryWikitext(wikitext, targetWord) {
     var results = [];
-    var lines = extractText.split("\n");
-    var skipSection = false;
+    var readings = [];
+    var lines = wikitext.split("\n");
+    var inMeaningSection = false;
 
     for (var i = 0; i < lines.length; i++) {
         var line = lines[i].trim();
         if (!line) continue;
 
-        // 見出し判定
         if (/^=+.*=+$/.test(line)) {
-            if (/発音|語源|翻訳|関連語|対義語|類義語|参照|出典|活用|派生語|成句|ことわざ/.test(line)) {
-                skipSection = true;
-            } else {
-                skipSection = false;
+            inMeaningSection = /意義|意味|名詞|動詞|形容詞|形容動詞|副詞|成句|ことわざ/.test(line);
+            continue;
+        }
+
+        // 音読み・訓読みの行があれば読み仮名として控えに取得
+        if (/^\*\s*(音読み|訓読み)\s*[:：]/.test(line)) {
+            var rClean = cleanWikitextMarkup(line.replace(/^\*\s*/, ""));
+            if (rClean && readings.length < 2) {
+                readings.push(rClean);
             }
             continue;
         }
-        if (skipSection) continue;
 
-        // 活用形や品詞ラベルのみの行はスキップ
-        if (line === targetWord || line.length < 4) continue;
-        if (/^(名詞|動詞|形容詞|形容動詞|副詞|連体詞|接続詞|感動詞|日本語|編集)$/.test(line)) continue;
-        if (/^\[/.test(line) || /^（.*）$/.test(line)) continue;
-
-        var cleaned = line.replace(/^[0-9０-９]+[\.\．\s]+/, "").trim();
-        if (cleaned.length >= 4 && cleaned !== targetWord) {
-            if (cleaned.length > 85) {
-                cleaned = cleaned.slice(0, 84) + "…";
+        // Wiktionaryの定義行は「# 」で始まる（「#:」「#*」「##」は例文・引用なので除外）
+        if (/^#\s+/.test(line) || (inMeaningSection && /^\*\s+/.test(line))) {
+            var body = line.replace(/^[#*]\s+/, "");
+            var cleaned = cleanWikitextMarkup(body);
+            if (cleaned && cleaned.length >= 3 && cleaned !== targetWord) {
+                if (cleaned.length > 85) {
+                    cleaned = cleaned.slice(0, 84) + "…";
+                }
+                results.push(cleaned);
+                if (results.length >= 3) break;
             }
-            results.push(cleaned);
-            if (results.length >= 3) break;
         }
     }
+
+    // 漢字単体で登録されていて訓読み・音読みがある場合、最初の意味の先頭に読みを補うか候補に追加
+    if (readings.length > 0 && targetWord.length === 1) {
+        var readingStr = "【" + readings.join(" / ") + "】";
+        if (results.length > 0 && results[0].indexOf("読み") === -1) {
+            results[0] = readingStr + " " + results[0];
+        } else if (results.length === 0) {
+            results.push(readingStr);
+        }
+    }
+
     return results;
 }
 
@@ -1191,7 +1268,7 @@ function createWordCardElement(item) {
             autoBtn.type = "button";
             autoBtn.className = "btn-card-action btn-card-auto";
             autoBtn.title = "辞書（Wiktionary / Wikipedia）から意味を自動取得";
-            autoBtn.textContent = "辞書取得";
+            autoBtn.textContent = "辞書";
             autoBtn.addEventListener("click", function() {
                 autoBtn.textContent = "取得中...";
                 autoBtn.disabled = true;
