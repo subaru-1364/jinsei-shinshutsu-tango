@@ -1973,19 +1973,6 @@ function createWordCardElement(item) {
     });
     termWrap.appendChild(term);
 
-    // 「すべての本」表示中で書籍が設定されている場合は書名ラベルを表示（クリックでその本へ移動可能）
-    if (currentBookTab === "all_books" && item.bookId !== "uncategorized") {
-        var bookTag = document.createElement("button");
-        bookTag.type = "button";
-        bookTag.className = "word-book-tag word-book-tag-clickable";
-        bookTag.title = "この本のシートへ移動";
-        bookTag.textContent = getBookTitleById(item.bookId);
-        bookTag.addEventListener("click", function() {
-            selectBookTab(item.bookId);
-        });
-        termWrap.appendChild(bookTag);
-    }
-
     top.appendChild(termWrap);
 
     var actions = document.createElement("div");
