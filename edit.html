@@ -8,22 +8,27 @@
     <link rel="icon" type="image/png" href="./assets/icon.png?v=6">
     <link rel="apple-touch-icon" href="./assets/icon.png?v=6">
 
-    <link rel="stylesheet" href="./assets/main.css?v=31">
+    <link rel="stylesheet" href="./assets/main.css?v=36">
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js" defer></script>
-    <script src="./assets/main.js?v=31" defer></script>
+    <script src="./assets/main.js?v=36" defer></script>
 </head>
 <body>
     <div class="app-wrapper">
-        <!-- 未ログイン時の専用ゲート画面（ログイン必須） -->
+        <!-- 未ログイン時の専用ゲート画面（ログイン必須 / ローカル環境では即時プレビュー可） -->
         <section id="login-gate" class="card login-gate-card">
             <img src="./assets/icon.png?v=6" alt="人生新出単語アイコン" class="gate-icon">
             <h1 class="gate-title">人生新出単語</h1>
             <p id="gate-message" class="gate-desc">ログイン状態を確認しています...</p>
-            <button type="button" id="gate-login-btn" class="btn btn-primary btn-gate-login" onclick="handleAuthClick()" style="display: none;">
-                Googleでログインして始める
-            </button>
+            <div class="gate-btn-group">
+                <button type="button" id="gate-login-btn" class="btn btn-primary btn-gate-login" onclick="handleAuthClick()" style="display: none;">
+                    Googleでログインして始める
+                </button>
+                <button type="button" id="gate-local-btn" class="btn btn-nav btn-gate-local" onclick="enterLocalPreviewMode()" style="display: none;">
+                    ローカル確認モードでそのまま開く
+                </button>
+            </div>
         </section>
 
         <!-- ログイン後に表示されるメイン画面 -->
@@ -75,7 +80,13 @@
                 <div class="quick-add-box">
                     <div class="quick-add-header">
                         <span class="editor-guide">新規追加（意味省略時は辞書から自動取得を試みます）</span>
-                        <button type="button" class="btn-quick-add" onclick="addQuickWord()">追加して保存</button>
+                        <div class="quick-add-right">
+                            <label class="setting-toggle" title="ONにすると辞書から意味を取得した際に「この意味でよいか」の確認画面を出します">
+                                <input type="checkbox" id="confirm-meaning-toggle" onchange="handleConfirmSettingChange(this.checked)">
+                                <span>意味を確認する</span>
+                            </label>
+                            <button type="button" class="btn-quick-add" onclick="addQuickWord()">追加して保存</button>
+                        </div>
                     </div>
                     <textarea id="quick-add-input" rows="3" placeholder="新しい単語を入力（改行で複数一気に追加できます&#10;単語だけで入力すると辞書から意味を自動取得します）"></textarea>
                 </div>
@@ -103,6 +114,24 @@
                     </div>
                 </div>
             </section>
+        </div>
+
+        <!-- 辞書意味の確認モーダル -->
+        <div id="meaning-confirm-modal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true">
+            <div class="card modal-card">
+                <div class="modal-header">
+                    <span id="modal-step-badge" class="count-badge">意味の確認</span>
+                    <h3 id="modal-word-title" class="modal-word-title"></h3>
+                </div>
+                <p class="modal-guide">辞書から以下の意味が見つかりました。この意味で登録しますか？（直接書き換えも可能です）</p>
+                <div id="modal-candidates-list" class="modal-candidates-list"></div>
+                <input type="text" id="modal-meaning-input" class="inline-edit-input" placeholder="登録する意味を入力・編集...">
+                <div class="modal-actions">
+                    <button type="button" id="modal-skip-btn" class="btn btn-sub" onclick="resolveMeaningModal('skip')">キャンセル</button>
+                    <button type="button" class="btn btn-sub btn-modal-known" onclick="resolveMeaningModal('known')">✓ 意味不要(分かる)</button>
+                    <button type="button" class="btn btn-primary" onclick="resolveMeaningModal('save')">この意味で確定</button>
+                </div>
+            </div>
         </div>
     </div>
 </body>

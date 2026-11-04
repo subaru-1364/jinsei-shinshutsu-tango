@@ -29,6 +29,40 @@ let meaningCandidatesCache = {};
 let candidateCycleIndex = {};
 let bookCoverCache = {}; // isbn -> coverUrl
 
+// 意味確認モーダル用キュー
+let meaningConfirmQueue = [];
+let meaningConfirmIndex = 0;
+let meaningConfirmOnFinish = null;
+
+function isLocalEnvironment() {
+    var h = window.location.hostname;
+    return h === "localhost" || h === "127.0.0.1" || window.location.protocol === "file:";
+}
+
+function shouldConfirmAutoMeaning() {
+    var v = localStorage.getItem("kuji_confirm_meaning");
+    return v === null ? true : (v === "1");
+}
+
+function handleConfirmSettingChange(checked) {
+    localStorage.setItem("kuji_confirm_meaning", checked ? "1" : "0");
+    syncConfirmToggleUI();
+}
+
+function syncConfirmToggleUI() {
+    var toggle = document.getElementById("confirm-meaning-toggle");
+    if (toggle) {
+        toggle.checked = shouldConfirmAutoMeaning();
+    }
+}
+
+function enterLocalPreviewMode() {
+    sessionStorage.setItem("kuji_local_preview", "1");
+    setGateVisibility(true, "", false);
+    updateSyncStatus("ローカル確認中", false);
+    refreshUI();
+}
+
 // Firebase 設定・同期用変数
 const firebaseConfig = {
     apiKey: "AIzaSyAL_BJS66V2_LK7v_IyG1RlX5QohsfaoOw",
@@ -63,6 +97,11 @@ function getEffectiveBookIdForEdit() {
 window.addEventListener("DOMContentLoaded", function() {
     recoverOriginalUserData();
     syncWordList();
+    syncConfirmToggleUI();
+    if (isLocalEnvironment()) {
+        // ローカル環境（localhost / file://）では待ち時間ゼロで即座に画面を表示
+        enterLocalPreviewMode();
+    }
     initFirebase();
 });
 
@@ -71,6 +110,7 @@ function setGateVisibility(isLoggedIn, messageText, showButton) {
     var main = document.getElementById("app-main");
     var gateMsg = document.getElementById("gate-message");
     var gateBtn = document.getElementById("gate-login-btn");
+    var localBtn = document.getElementById("gate-local-btn");
 
     if (gate && main) {
         gate.style.display = isLoggedIn ? "none" : "flex";
@@ -82,9 +122,13 @@ function setGateVisibility(isLoggedIn, messageText, showButton) {
     if (gateBtn) {
         gateBtn.style.display = showButton ? "inline-flex" : "none";
     }
+    if (localBtn) {
+        localBtn.style.display = (!isLoggedIn && isLocalEnvironment()) ? "inline-flex" : "none";
+    }
 }
 
 function refreshUI() {
+    syncConfirmToggleUI();
     renderBookTabs();
     renderActiveBookMeta();
 
@@ -665,7 +709,44 @@ function extractSearchTerms(rawWord) {
     if (terms.indexOf(s) === -1) {
         terms.push(s);
     }
+
     return terms;
+}
+
+function fetchWiktionaryDefinitionsByTitles(titlesList, requiredReading) {
+    if (!titlesList || titlesList.length === 0) return Promise.resolve([]);
+    var titlesParam = titlesList.slice(0, 8).map(function(t) { return encodeURIComponent(t); }).join("|");
+    var wiktRevUrl = "https://ja.wiktionary.org/w/api.php?action=query&prop=revisions&rvprop=content&redirects=1&titles=" +
+                     titlesParam + "&format=json&origin=*";
+    var found = [];
+    return fetch(wiktRevUrl)
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            if (data && data.query && data.query.pages) {
+                var pages = data.query.pages;
+                Object.keys(pages).forEach(function(pid) {
+                    var page = pages[pid];
+                    if (pid !== "-1" && page.revisions && page.revisions[0]) {
+                        var rev = page.revisions[0];
+                        var rawWikitext = rev["*"] || (rev.slots && rev.slots.main && rev.slots.main["*"]) || "";
+                        if (rawWikitext) {
+                            // 全文検索経由の場合、記事内に検索した読み（例：「ほおづえ」）が実際に含まれているか検証し、無関係な記事を除外する
+                            if (requiredReading && rawWikitext.indexOf(requiredReading) === -1) {
+                                return;
+                            }
+                            var defs = parseWiktionaryWikitext(rawWikitext, page.title || "");
+                            defs.forEach(function(d) {
+                                if (found.indexOf(d) === -1 && found.length < 4) {
+                                    found.push(d);
+                                }
+                            });
+                        }
+                    }
+                });
+            }
+            return found;
+        })
+        .catch(function() { return found; });
 }
 
 function fetchWordMeaningCandidates(word) {
@@ -678,40 +759,49 @@ function fetchWordMeaningCandidates(word) {
     var searchTerms = extractSearchTerms(cleanW);
     var candidates = [];
 
-    // 1. Wiktionary（wikitextの「# 意味」定義行＋読み仮名を直接解析・複数キーワード一括検索）
-    var titlesParam = searchTerms.map(function(t) { return encodeURIComponent(t); }).join("|");
-    var wiktRevUrl = "https://ja.wiktionary.org/w/api.php?action=query&prop=revisions&rvprop=content&redirects=1&titles=" +
-                     titlesParam + "&format=json&origin=*";
+    function addCandidate(text) {
+        if (text && candidates.indexOf(text) === -1 && candidates.length < 4) {
+            candidates.push(text);
+        }
+    }
 
-    return fetch(wiktRevUrl)
-        .then(function(res) { return res.json(); })
-        .then(function(data) {
-            if (data && data.query && data.query.pages) {
-                var pages = data.query.pages;
-                Object.keys(pages).forEach(function(pid) {
-                    var page = pages[pid];
-                    if (pid !== "-1" && page.revisions && page.revisions[0]) {
-                        var rev = page.revisions[0];
-                        var rawWikitext = rev["*"] || (rev.slots && rev.slots.main && rev.slots.main["*"]) || "";
-                        if (rawWikitext) {
-                            var defs = parseWiktionaryWikitext(rawWikitext, page.title || cleanW);
-                            defs.forEach(function(d) {
-                                if (candidates.indexOf(d) === -1 && candidates.length < 4) {
-                                    candidates.push(d);
-                                }
+    // 1. Wiktionary（タイトル完全一致・リダイレクト追跡のみ）
+    return fetchWiktionaryDefinitionsByTitles(searchTerms, "")
+        .then(function(defs) {
+            defs.forEach(addCandidate);
+        })
+        .then(function() {
+            if (candidates.length >= 2) return;
+            // 2. ひらがなのみで入力された場合（例：「ほおづえ」）に限り、その読みを持つ漢字見出し語（例：「頬杖」）をWiktionaryから厳密検索
+            var primaryTerm = searchTerms[0] || cleanW;
+            if (!/^[ぁ-んー]{2,}$/.test(primaryTerm)) return;
+            var wiktSearchUrl = "https://ja.wiktionary.org/w/api.php?action=query&list=search&srsearch=" +
+                                encodeURIComponent("\"" + primaryTerm + "\"") + "&srlimit=3&format=json&origin=*";
+            return fetch(wiktSearchUrl)
+                .then(function(res) { return res.json(); })
+                .then(function(sData) {
+                    if (sData && sData.query && sData.query.search && sData.query.search.length > 0) {
+                        var hitTitles = [];
+                        sData.query.search.forEach(function(item) {
+                            if (item.title && searchTerms.indexOf(item.title) === -1) {
+                                hitTitles.push(item.title);
+                            }
+                        });
+                        if (hitTitles.length > 0) {
+                            return fetchWiktionaryDefinitionsByTitles(hitTitles, primaryTerm).then(function(moreDefs) {
+                                moreDefs.forEach(addCandidate);
                             });
                         }
                     }
-                });
-            }
+                })
+                .catch(function() {});
         })
-        .catch(function() {})
         .then(function() {
             if (candidates.length >= 3) {
                 meaningCandidatesCache[cleanW] = candidates;
                 return candidates;
             }
-            // 2. Wikipedia（各キーワードで順番に検索：「踵」や「かかと」の解説文を取得）
+            // 3. Wikipedia（見出し語完全一致・公式リダイレクトのみ。無関係な記事が混ざる曖昧な全文検索は行わない）
             var wikiChain = Promise.resolve();
             searchTerms.forEach(function(term) {
                 wikiChain = wikiChain.then(function() {
@@ -725,15 +815,12 @@ function fetchWordMeaningCandidates(word) {
                         .then(function(summary) {
                             if (summary && summary.extract && summary.type !== "disambiguation") {
                                 var wikiDef = cleanWikipediaSummary(summary.extract);
-                                if (wikiDef && candidates.indexOf(wikiDef) === -1) {
-                                    candidates.push(wikiDef);
-                                }
+                                addCandidate(wikiDef);
                             }
                         })
                         .catch(function() {});
                 });
             });
-
             return wikiChain.then(function() {
                 meaningCandidatesCache[cleanW] = candidates;
                 return candidates;
@@ -786,11 +873,11 @@ function parseWiktionaryWikitext(wikitext, targetWord) {
             continue;
         }
 
-        // Wiktionaryの定義行は「# 」で始まる（「#:」「#*」「##」は例文・引用なので除外）
-        if (/^#\s+/.test(line) || (inMeaningSection && /^\*\s+/.test(line))) {
-            var body = line.replace(/^[#*]\s+/, "");
+        // Wiktionaryの定義行は「#」で始まる（「#:」「#*」「##」は例文・引用なので除外、#直後の空白有無は問わない）
+        if (/^#(?![:*#])/.test(line) || (inMeaningSection && /^\*(?![:*])/.test(line))) {
+            var body = line.replace(/^[#*]+\s*/, "");
             var cleaned = cleanWikitextMarkup(body);
-            if (cleaned && cleaned.length >= 3 && cleaned !== targetWord) {
+            if (cleaned && cleaned.length >= 2 && cleaned !== targetWord) {
                 if (cleaned.length > 85) {
                     cleaned = cleaned.slice(0, 84) + "…";
                 }
@@ -820,8 +907,8 @@ function cleanWikipediaSummary(extractText) {
     // 最初の1文を取り出す
     var firstSentence = text.split("。")[0];
     if (!firstSentence) return "";
-    // 「〜とは、」の前の主語を省略して簡潔にする
-    var match = firstSentence.match(/^.{1,30}?とは、?(.*)$/);
+    // 「〜とは、」「〜は、」の前の主語を省略して簡潔にする
+    var match = firstSentence.match(/^.{1,25}?(?:とは、?|は、)\s*(.*)$/);
     if (match && match[1].trim().length >= 4) {
         firstSentence = match[1].trim();
     }
@@ -838,42 +925,151 @@ function autoFillMeaningsForSheetWords(bookId, wordsToFetch) {
         if (uniqueWords.indexOf(w) === -1) uniqueWords.push(w);
     });
 
-    var filledCount = 0;
+    var foundItems = [];
     var chain = Promise.resolve();
 
     uniqueWords.forEach(function(targetWord) {
         chain = chain.then(function() {
             return fetchWordMeaningCandidates(targetWord).then(function(candidates) {
                 if (candidates && candidates.length > 0) {
-                    var applied = applyAutoMeaningToWord(bookId, targetWord, candidates[0]);
-                    if (applied) filledCount++;
+                    foundItems.push({
+                        bookId: bookId,
+                        word: targetWord,
+                        candidates: candidates
+                    });
                 }
             });
         });
     });
 
     chain.then(function() {
-        if (filledCount > 0) {
-            saveAllSheets(false);
-            sessionStorage.setItem("kuji_filter_tab", "has");
-            refreshUI();
-            showSaveFeedback("辞書から " + filledCount + " 件の意味を自動付与しました");
-        } else {
+        if (foundItems.length === 0) {
             showSaveFeedback("追加・保存しました（辞書一致なし）");
+            return;
+        }
+
+        // 「意味を確認する」設定がONなら確認モーダルを順番に表示
+        if (shouldConfirmAutoMeaning()) {
+            openMeaningConfirmQueue(foundItems, function(confirmedCount) {
+                saveAllSheets(false);
+                if (confirmedCount > 0) {
+                    sessionStorage.setItem("kuji_filter_tab", "has");
+                }
+                refreshUI();
+                showSaveFeedback(confirmedCount + " 件の意味を確認・保存しました");
+            });
+        } else {
+            // OFFなら確認なしで第1候補を「[自動]」ラベル付きで自動登録（カード上で後から確認・別候補変更・確定が可能）
+            var filledCount = 0;
+            foundItems.forEach(function(entry) {
+                var ok = applyConfirmedMeaningToWord(entry.bookId, entry.word, "[自動] " + entry.candidates[0]);
+                if (ok) filledCount++;
+            });
+            saveAllSheets(false);
+            if (filledCount > 0) {
+                sessionStorage.setItem("kuji_filter_tab", "has");
+            }
+            refreshUI();
+            showSaveFeedback("辞書から " + filledCount + " 件の意味を自動登録しました");
         }
     });
 }
 
-function applyAutoMeaningToWord(bookId, targetWord, candidateMeaning) {
+function applyConfirmedMeaningToWord(bookId, targetWord, meaningStr) {
     var lines = sheetLines[bookId] || [];
     for (var i = 0; i < lines.length; i++) {
         var trimmed = lines[i].trim();
-        if (trimmed === targetWord) {
-            lines[i] = targetWord + " : [自動] " + candidateMeaning;
+        var w = trimmed;
+        var m = trimmed.match(/^([^:：\t]+)[:：\t]/);
+        if (m) w = m[1].trim();
+        if (w === targetWord) {
+            lines[i] = targetWord + " : " + meaningStr;
             return true;
         }
     }
     return false;
+}
+
+function openMeaningConfirmQueue(items, onFinish) {
+    meaningConfirmQueue = items || [];
+    meaningConfirmIndex = 0;
+    meaningConfirmOnFinish = onFinish || null;
+    meaningConfirmQueue._confirmedCount = 0;
+    renderCurrentMeaningConfirmModal();
+}
+
+function renderCurrentMeaningConfirmModal() {
+    var modal = document.getElementById("meaning-confirm-modal");
+    if (!modal) return;
+
+    if (meaningConfirmIndex >= meaningConfirmQueue.length) {
+        modal.style.display = "none";
+        var count = meaningConfirmQueue._confirmedCount || 0;
+        var cb = meaningConfirmOnFinish;
+        meaningConfirmQueue = [];
+        meaningConfirmOnFinish = null;
+        if (cb) cb(count);
+        return;
+    }
+
+    var current = meaningConfirmQueue[meaningConfirmIndex];
+    var badge = document.getElementById("modal-step-badge");
+    var title = document.getElementById("modal-word-title");
+    var list = document.getElementById("modal-candidates-list");
+    var input = document.getElementById("modal-meaning-input");
+    var skipBtn = document.getElementById("modal-skip-btn");
+
+    if (badge) {
+        badge.textContent = "意味の確認 (" + (meaningConfirmIndex + 1) + " / " + meaningConfirmQueue.length + ")";
+    }
+    if (skipBtn) {
+        skipBtn.textContent = (meaningConfirmQueue.length > 1) ? "スキップ（登録しない）" : "キャンセル";
+    }
+    if (title) {
+        title.textContent = current.word;
+    }
+    if (input) {
+        input.value = current.candidates[0] || "";
+    }
+    if (list) {
+        list.textContent = "";
+        current.candidates.forEach(function(cand, idx) {
+            var btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = (idx === 0) ? "candidate-chip active" : "candidate-chip";
+            btn.textContent = "候補" + (idx + 1) + ": " + cand;
+            btn.addEventListener("click", function() {
+                if (input) input.value = cand;
+                var allChips = list.querySelectorAll(".candidate-chip");
+                for (var k = 0; k < allChips.length; k++) {
+                    allChips[k].classList.remove("active");
+                }
+                btn.classList.add("active");
+            });
+            list.appendChild(btn);
+        });
+    }
+
+    modal.style.display = "flex";
+    if (input) input.focus();
+}
+
+function resolveMeaningModal(action) {
+    if (meaningConfirmIndex >= meaningConfirmQueue.length) return;
+    var current = meaningConfirmQueue[meaningConfirmIndex];
+    var input = document.getElementById("modal-meaning-input");
+    var val = input ? input.value.trim() : (current.candidates[0] || "");
+
+    if (action === "save" && val) {
+        applyConfirmedMeaningToWord(current.bookId, current.word, val);
+        meaningConfirmQueue._confirmedCount = (meaningConfirmQueue._confirmedCount || 0) + 1;
+    } else if (action === "known") {
+        applyConfirmedMeaningToWord(current.bookId, current.word, "✓");
+        meaningConfirmQueue._confirmedCount = (meaningConfirmQueue._confirmedCount || 0) + 1;
+    }
+
+    meaningConfirmIndex++;
+    renderCurrentMeaningConfirmModal();
 }
 
 // 編集画面で「辞書から意味を一括補完」ボタンを押したとき
@@ -958,6 +1154,10 @@ function initFirebase() {
                 setGateVisibility(true, "", false);
                 refreshUI();
                 startCloudSync(user);
+            } else if (isLocalEnvironment() && sessionStorage.getItem("kuji_local_preview") === "1") {
+                setGateVisibility(true, "", false);
+                updateSyncStatus("ローカル確認中", false);
+                refreshUI();
             } else {
                 if (activeDbRef) {
                     activeDbRef.off();
@@ -1244,8 +1444,12 @@ function createWordCardElement(item) {
     termWrap.className = "word-term-wrap";
 
     var term = document.createElement("span");
-    term.className = "word-term";
+    term.className = "word-term word-term-editable";
+    term.title = "タップして単語・意味を編集";
     term.textContent = item.word;
+    term.addEventListener("click", function() {
+        startInlineEdit(item.id, true);
+    });
     termWrap.appendChild(term);
 
     // 「すべての本」表示中で書籍が設定されている場合は書名ラベルを表示
@@ -1274,7 +1478,20 @@ function createWordCardElement(item) {
                 autoBtn.disabled = true;
                 fetchWordMeaningCandidates(item.word).then(function(candidates) {
                     if (candidates && candidates.length > 0) {
-                        updateSingleWordLine(item.bookId, item.word, item.word + " : [自動] " + candidates[0]);
+                        if (shouldConfirmAutoMeaning()) {
+                            autoBtn.textContent = "辞書";
+                            autoBtn.disabled = false;
+                            openMeaningConfirmQueue([{
+                                bookId: item.bookId,
+                                word: item.word,
+                                candidates: candidates
+                            }], function() {
+                                saveAllSheets(false);
+                                refreshUI();
+                            });
+                        } else {
+                            updateSingleWordLine(item.bookId, item.word, item.word + " : [自動] " + candidates[0]);
+                        }
                     } else {
                         autoBtn.textContent = "該当なし";
                         setTimeout(function() {
@@ -1289,10 +1506,10 @@ function createWordCardElement(item) {
         var editBtn = document.createElement("button");
         editBtn.type = "button";
         editBtn.className = isCompleted ? "btn-card-action" : "btn-card-action btn-card-add";
-        editBtn.title = isCompleted ? "意味を編集" : "意味を手動で追加";
-        editBtn.textContent = isCompleted ? "編集" : "＋意味";
+        editBtn.title = "単語や意味を編集";
+        editBtn.textContent = isCompleted ? "編集" : "編集 / ＋意味";
         editBtn.addEventListener("click", function() {
-            startInlineEdit(item.id);
+            startInlineEdit(item.id, false);
         });
         actions.appendChild(editBtn);
 
@@ -1326,16 +1543,43 @@ function createWordCardElement(item) {
         var editBox = document.createElement("div");
         editBox.className = "inline-edit-box";
 
+        var wordRow = document.createElement("div");
+        wordRow.className = "inline-edit-row";
+        var wordLabel = document.createElement("span");
+        wordLabel.className = "inline-edit-label";
+        wordLabel.textContent = "単語";
+        wordRow.appendChild(wordLabel);
+
+        var wordInput = document.createElement("input");
+        wordInput.type = "text";
+        wordInput.id = "inline-word-input-" + item.id;
+        wordInput.className = "inline-edit-input inline-word-input";
+        wordInput.placeholder = "単語を入力...";
+        wordInput.value = item.word;
+        wordInput.addEventListener("keydown", function(event) {
+            handleInlineKey(event, item.id, item.bookId, item.word, item.noMeaningNeeded);
+        });
+        wordRow.appendChild(wordInput);
+        editBox.appendChild(wordRow);
+
+        var meaningRow = document.createElement("div");
+        meaningRow.className = "inline-edit-row";
+        var meaningLabel = document.createElement("span");
+        meaningLabel.className = "inline-edit-label";
+        meaningLabel.textContent = "意味";
+        meaningRow.appendChild(meaningLabel);
+
         var input = document.createElement("input");
         input.type = "text";
         input.id = "inline-input-" + item.id;
         input.className = "inline-edit-input";
-        input.placeholder = "意味・メモを入力...";
+        input.placeholder = "意味・メモを入力（空欄で意味なし）...";
         input.value = item.meaning;
         input.addEventListener("keydown", function(event) {
-            handleInlineKey(event, item.id, item.bookId, item.word);
+            handleInlineKey(event, item.id, item.bookId, item.word, item.noMeaningNeeded);
         });
-        editBox.appendChild(input);
+        meaningRow.appendChild(input);
+        editBox.appendChild(meaningRow);
 
         var candidateBox = document.createElement("div");
         candidateBox.className = "inline-candidates";
@@ -1350,7 +1594,8 @@ function createWordCardElement(item) {
         dictBtn.className = "btn-inline-dict";
         dictBtn.textContent = "辞書候補を見る";
         dictBtn.addEventListener("click", function() {
-            showInlineDictionaryCandidates(item.id, item.word);
+            var currentWordVal = wordInput.value.trim() || item.word;
+            showInlineDictionaryCandidates(item.id, currentWordVal);
         });
         btns.appendChild(dictBtn);
 
@@ -1368,7 +1613,7 @@ function createWordCardElement(item) {
         saveBtn.className = "btn-inline-save";
         saveBtn.textContent = "保存";
         saveBtn.addEventListener("click", function() {
-            saveInlineMeaning(item.id, item.bookId, item.word);
+            saveInlineMeaning(item.id, item.bookId, item.word, item.noMeaningNeeded);
         });
         btns.appendChild(saveBtn);
 
@@ -1564,7 +1809,8 @@ function renderWordCards(filterKeyword) {
     container.appendChild(fragment);
 
     if (editingWordId) {
-        var editInput = document.getElementById("inline-input-" + editingWordId);
+        var targetInputId = editingFocusWord ? ("inline-word-input-" + editingWordId) : ("inline-input-" + editingWordId);
+        var editInput = document.getElementById(targetInputId) || document.getElementById("inline-input-" + editingWordId);
         if (editInput) {
             editInput.focus();
             editInput.select();
@@ -1605,9 +1851,12 @@ function markWordAsKnown(bookId, targetWord) {
     updateSingleWordLine(bookId, targetWord, targetWord + " : ✓");
 }
 
-// ⑦ インライン編集（一覧カード上で意味を追記・編集）
-function startInlineEdit(id) {
+// ⑦ インライン編集（一覧カード上で単語・意味を編集）
+var editingFocusWord = false;
+
+function startInlineEdit(id, focusWord) {
     editingWordId = id;
+    editingFocusWord = Boolean(focusWord);
     var searchInput = document.getElementById("search-input");
     var keyword = searchInput ? searchInput.value : "";
     renderWordCards(keyword);
@@ -1615,27 +1864,42 @@ function startInlineEdit(id) {
 
 function cancelInlineEdit() {
     editingWordId = null;
+    editingFocusWord = false;
     var searchInput = document.getElementById("search-input");
     var keyword = searchInput ? searchInput.value : "";
     renderWordCards(keyword);
 }
 
-function handleInlineKey(event, id, bookId, targetWord) {
+function handleInlineKey(event, id, bookId, targetWord, wasNoMeaningNeeded) {
     if (event.key === "Enter") {
-        saveInlineMeaning(id, bookId, targetWord);
+        saveInlineMeaning(id, bookId, targetWord, wasNoMeaningNeeded);
     } else if (event.key === "Escape") {
         cancelInlineEdit();
     }
 }
 
-function saveInlineMeaning(id, bookId, targetWord) {
+function saveInlineMeaning(id, bookId, targetWord, wasNoMeaningNeeded) {
+    var wordInput = document.getElementById("inline-word-input-" + id);
     var editInput = document.getElementById("inline-input-" + id);
     if (!editInput) return;
 
+    var newWord = wordInput ? wordInput.value.trim() : targetWord;
+    if (!newWord) {
+        alert("単語を入力してください");
+        if (wordInput) wordInput.focus();
+        return;
+    }
+
     var newMeaning = cleanMeaning(editInput.value.trim());
-    var newLine = newMeaning ? (targetWord + " : " + newMeaning) : targetWord;
+    var newLine = newWord;
+    if (newMeaning) {
+        newLine = newWord + " : " + newMeaning;
+    } else if (wasNoMeaningNeeded) {
+        newLine = newWord + " : ✓";
+    }
 
     editingWordId = null;
+    editingFocusWord = false;
     updateSingleWordLine(bookId, targetWord, newLine);
 }
 
