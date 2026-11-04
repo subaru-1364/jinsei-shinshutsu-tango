@@ -187,7 +187,8 @@ function serializeFullBulkData() {
         var safeTitle = (book.title || "無題").replace(/[\|\[\]\r\n]/g, " ");
         var safeAuthor = (book.author || "").replace(/[\|\[\]\r\n]/g, " ");
         var safeIsbn = (book.isbn || "").replace(/[\|\[\]\r\n]/g, "");
-        var header = "# [BOOK:" + book.id + "|" + safeIsbn + "|" + safeTitle + "|" + safeAuthor + "]";
+        var safeCover = (book.cover || "").replace(/[\|\[\]\r\n]/g, "");
+        var header = "# [BOOK:" + book.id + "|" + safeIsbn + "|" + safeTitle + "|" + safeAuthor + (safeCover ? ("|" + safeCover) : "") + "]";
         var bLines = (sheetLines[book.id] || []).filter(function(l) { return l.trim() !== ""; });
         if (bLines.length > 0) {
             parts.push(header + "\n" + bLines.join("\n"));
@@ -404,18 +405,24 @@ function normalizeIsbnInput(str) {
 function addBookByIsbn() {
     var input = document.getElementById("isbn-input");
     var status = document.getElementById("isbn-status");
+    var resultsBox = document.getElementById("isbn-search-results");
     var btn = document.getElementById("isbn-submit-btn");
     if (!input) return;
 
     var raw = input.value.trim();
     if (!raw) return;
 
+    if (resultsBox) resultsBox.textContent = "";
+
     var isbn = normalizeIsbnInput(raw);
     if (!isbn) {
-        // 書名として直接登録
-        registerBookObject("", raw, "");
-        input.value = "";
-        if (status) status.textContent = "「" + raw + "」を本棚に追加しました";
+        // 書名・キーワードとしてGoogle Books公開検索を実行し、候補一覧＋「そのままシート名として作成」を表示
+        if (btn) btn.disabled = true;
+        if (status) status.textContent = "「" + raw + "」で本を検索中...";
+        searchBooksByTitleKeyword(raw).then(function(candidates) {
+            if (btn) btn.disabled = false;
+            renderBookSearchCandidates(raw, candidates);
+        });
         return;
     }
 
@@ -449,6 +456,379 @@ function addBookByIsbn() {
             }
         }
     });
+}
+
+function searchBooksByTitleKeyword(keyword) {
+    var kw = (keyword || "").trim();
+    if (!kw) return Promise.resolve([]);
+
+    // 1. Google Books 公開検索（langRestrict=ja で日本語書籍を優先）
+    var gbUrl = "https://www.googleapis.com/books/v1/volumes?q=" + encodeURIComponent(kw) + "&langRestrict=ja&maxResults=6";
+    var gbPromise = fetch(gbUrl)
+        .then(function(res) { return res.ok ? res.json() : null; })
+        .then(function(data) {
+            var list = [];
+            if (data && Array.isArray(data.items)) {
+                data.items.forEach(function(item) {
+                    var vi = item.volumeInfo || {};
+                    if (!vi.title) return;
+                    var title = vi.title + (vi.subtitle ? (" " + vi.subtitle) : "");
+                    var author = Array.isArray(vi.authors) ? vi.authors.join(", ") : "";
+                    var foundIsbn = "";
+                    if (Array.isArray(vi.industryIdentifiers)) {
+                        vi.industryIdentifiers.forEach(function(idObj) {
+                            if (idObj.type === "ISBN_13") {
+                                foundIsbn = idObj.identifier;
+                            } else if (idObj.type === "ISBN_10" && !foundIsbn) {
+                                foundIsbn = idObj.identifier;
+                            }
+                        });
+                    }
+                    var thumb = "";
+                    if (vi.imageLinks) {
+                        var rawThumb = vi.imageLinks.thumbnail || vi.imageLinks.smallThumbnail || "";
+                        if (rawThumb) {
+                            thumb = rawThumb.replace(/^http:\/\//i, "https://");
+                        }
+                    }
+                    if (!thumb && foundIsbn) {
+                        thumb = "https://ndlsearch.ndl.go.jp/thumbnail/" + encodeURIComponent(foundIsbn) + ".jpg";
+                    }
+                    if (thumb && foundIsbn) {
+                        bookCoverCache[foundIsbn] = thumb;
+                    }
+                    list.push({
+                        isbn: foundIsbn,
+                        title: title,
+                        author: author,
+                        cover: thumb
+                    });
+                });
+            }
+            return list;
+        })
+        .catch(function() { return []; });
+
+    // 2. Apple Books (iTunes Search API: APIキー不要・完全無料・日本語書籍と高画質書影に非常に強い)
+    var applePromise = searchBooksViaAppleBooks(kw);
+
+    // 3. Wikipedia 検索から書籍・小説ページのISBN/書誌を抽出してopenBDで裏付け取得
+    var wpBookPromise = searchBookViaWikipediaAndOpenBd(kw);
+
+    return Promise.all([applePromise, wpBookPromise, gbPromise]).then(function(results) {
+        var appleList = results[0] || [];
+        var wpList = results[1] || [];
+        var gbList = results[2] || [];
+        var merged = [];
+        var seenKey = {};
+
+        function addBookCand(c) {
+            if (!c || !c.title) return;
+            var k = c.isbn ? ("isbn:" + c.isbn) : ("title:" + c.title + "|" + (c.author || ""));
+            if (seenKey[k]) return;
+            seenKey[k] = true;
+            merged.push(c);
+        }
+
+        // Apple Books・Wikipedia+openBD・Google Books の候補を統合
+        appleList.forEach(addBookCand);
+        wpList.forEach(addBookCand);
+        gbList.forEach(addBookCand);
+        return merged.slice(0, 6);
+    });
+}
+
+function searchBooksViaAppleBooks(keyword) {
+    // JSONP（動的scriptタグ）を使うことで、file:// や localhost、GitHub Pages でもCORSブロックを100%回避して取得する
+    return new Promise(function(resolve) {
+        var cbName = "__itunesBookCb_" + Date.now() + "_" + Math.floor(Math.random() * 10000);
+        var script = document.createElement("script");
+        var done = false;
+
+        function cleanup() {
+            if (script.parentNode) {
+                script.parentNode.removeChild(script);
+            }
+            try {
+                delete window[cbName];
+            } catch (e) {
+                window[cbName] = undefined;
+            }
+        }
+
+        var timer = setTimeout(function() {
+            if (done) return;
+            done = true;
+            cleanup();
+            resolve([]);
+        }, 4500);
+
+        window[cbName] = function(data) {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            cleanup();
+            var list = [];
+            if (data && Array.isArray(data.results)) {
+                data.results.forEach(function(item) {
+                    var title = item.trackName || item.collectionName || "";
+                    if (!title) return;
+                    // 成人向け・不適切コンテンツ（explicit）を除外
+                    if (item.trackExplicitness === "explicit" || item.collectionExplicitness === "explicit") return;
+                    var genres = Array.isArray(item.genres) ? item.genres.join(" ") : "";
+                    if (/アダルト|成人|BL|TL|官能/.test(genres) || /【18禁】|成人向|アダルト/.test(title)) return;
+
+                    var author = item.artistName || "";
+                    var cover = (item.artworkUrl100 || item.artworkUrl60 || "").replace(/^http:\/\//i, "https://");
+                    list.push({
+                        isbn: "",
+                        title: title,
+                        author: author,
+                        cover: cover
+                    });
+                });
+            }
+            resolve(list);
+        };
+
+        script.onerror = function() {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            cleanup();
+            resolve([]);
+        };
+
+        script.src = "https://itunes.apple.com/search?term=" + encodeURIComponent(keyword) +
+                     "&country=jp&media=ebook&explicit=No&limit=6&callback=" + cbName;
+        document.head.appendChild(script);
+    });
+}
+
+function extractIsbnsFromText(rawText) {
+    var list = [];
+    if (!rawText) return list;
+    // ISBN2テンプレートやハイフン付き・連続のISBN-13 / ISBN-10を抽出
+    var cleaned = rawText.replace(/\x7b\x7bISBN2?\|/gi, "ISBN ");
+    var regex = /(?:ISBN(?:-1[03])?[:：\s]*)?(97[89][-\s0-9]{10,16}|[0-9]{9}[0-9Xx]|4-[-\s0-9]{8,12}[0-9Xx])/g;
+    var m;
+    while ((m = regex.exec(cleaned)) !== null) {
+        var norm = normalizeIsbnInput(m[1]);
+        if (norm && list.indexOf(norm) === -1) {
+            list.push(norm);
+        }
+        if (list.length >= 4) break;
+    }
+    return list;
+}
+
+function searchBookViaWikipediaAndOpenBd(keyword) {
+    var searchUrl = "https://ja.wikipedia.org/w/api.php?action=query&list=search&srsearch=" +
+                    encodeURIComponent(keyword) + "&srlimit=5&format=json&origin=*";
+    return fetch(searchUrl)
+        .then(function(res) { return res.json(); })
+        .then(function(sData) {
+            var titles = [];
+            if (sData && sData.query && Array.isArray(sData.query.search)) {
+                sData.query.search.forEach(function(item) {
+                    if (item.title && titles.indexOf(item.title) === -1) {
+                        titles.push(item.title);
+                    }
+                });
+            }
+            if (titles.indexOf(keyword) === -1) {
+                titles.unshift(keyword);
+            }
+            var tParam = titles.slice(0, 5).map(function(t) { return encodeURIComponent(t); }).join("|");
+            var revUrl = "https://ja.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=content&redirects=1&titles=" +
+                         tParam + "&format=json&origin=*";
+            return fetch(revUrl).then(function(r) { return r.json(); });
+        })
+        .then(function(revData) {
+            var isbns = [];
+            var fallbackAuthor = "";
+            var fallbackTitle = "";
+            if (revData && revData.query && revData.query.pages) {
+                var pages = revData.query.pages;
+                Object.keys(pages).forEach(function(pid) {
+                    var p = pages[pid];
+                    if (pid === "-1" || !p.revisions || !p.revisions[0]) return;
+                    var rev = p.revisions[0];
+                    var wt = rev["*"] || (rev.slots && rev.slots.main && rev.slots.main["*"]) || "";
+                    if (!wt) return;
+                    // 記事内に検索キーワードが含まれているか確認
+                    if (p.title !== keyword && wt.indexOf(keyword) === -1) return;
+
+                    if (!fallbackTitle) {
+                        fallbackTitle = (p.title === keyword) ? p.title : keyword;
+                    }
+
+                    // 著者パラメータ、または「（著者名）の小説」や記事タイトル自体が作家名の場合を抽出
+                    var authMatch = wt.match(/\|\s*(?:著者|作者|author)\s*=\s*([^\n|]+)/);
+                    if (authMatch && !fallbackAuthor) {
+                        fallbackAuthor = cleanWikitextMarkup(authMatch[1]);
+                    } else if (!fallbackAuthor && p.title !== keyword) {
+                        // 『箱庭図書館』が作家「乙一」のページ内でヒットした場合など、ページタイトルを著者候補にする
+                        fallbackAuthor = p.title;
+                    }
+
+                    // キーワードが記事内に複数回登場する場合（目次＋作品リストなど）、すべての登場箇所周辺からISBNを探す
+                    var searchPos = 0;
+                    while (searchPos < wt.length && isbns.length < 4) {
+                        var kwIdx = wt.indexOf(keyword, searchPos);
+                        if (kwIdx === -1) break;
+                        var lineWindow = wt.slice(Math.max(0, kwIdx - 80), kwIdx + 600);
+                        var found = extractIsbnsFromText(lineWindow);
+                        found.forEach(function(code) {
+                            if (isbns.indexOf(code) === -1 && isbns.length < 4) {
+                                isbns.push(code);
+                            }
+                        });
+                        searchPos = kwIdx + keyword.length;
+                    }
+
+                    // もし作品単体ページ（p.title === keyword）で周辺にISBNがなかった場合はページ全体から抽出
+                    if (isbns.length === 0 && p.title === keyword) {
+                        var pageIsbns = extractIsbnsFromText(wt);
+                        pageIsbns.forEach(function(code) {
+                            if (isbns.indexOf(code) === -1 && isbns.length < 4) {
+                                isbns.push(code);
+                            }
+                        });
+                    }
+                });
+            }
+
+            if (isbns.length === 0) {
+                // ISBNがWikipedia本文になくても、作品記事としてヒットしていれば候補を1件返す
+                if (fallbackTitle) {
+                    return [{
+                        isbn: "",
+                        title: fallbackTitle,
+                        author: fallbackAuthor,
+                        cover: ""
+                    }];
+                }
+                return [];
+            }
+
+            // 抽出したISBNをopenBD APIで一括照会して正確な書名・著者・書影を取得
+            var openBdUrl = "https://api.openbd.jp/v1/get?isbn=" + isbns.join(",");
+            return fetch(openBdUrl)
+                .then(function(r) { return r.json(); })
+                .then(function(bdArr) {
+                    var out = [];
+                    if (Array.isArray(bdArr)) {
+                        bdArr.forEach(function(entry, idx) {
+                            var code = isbns[idx];
+                            if (entry && entry.summary && entry.summary.title) {
+                                var s = entry.summary;
+                                var cover = s.cover || ("https://ndlsearch.ndl.go.jp/thumbnail/" + encodeURIComponent(s.isbn || code) + ".jpg");
+                                if (cover && (s.isbn || code)) {
+                                    bookCoverCache[s.isbn || code] = cover;
+                                }
+                                out.push({
+                                    isbn: s.isbn || code,
+                                    title: s.title,
+                                    author: s.author || fallbackAuthor,
+                                    cover: cover
+                                });
+                            }
+                        });
+                    }
+                    // openBDにデータがなかったISBNでも、キーワード名＋NDL書影で候補作成
+                    if (out.length === 0 && isbns[0]) {
+                        var firstIsbn = isbns[0];
+                        var ndlCover = "https://ndlsearch.ndl.go.jp/thumbnail/" + encodeURIComponent(firstIsbn) + ".jpg";
+                        bookCoverCache[firstIsbn] = ndlCover;
+                        out.push({
+                            isbn: firstIsbn,
+                            title: fallbackTitle || keyword,
+                            author: fallbackAuthor,
+                            cover: ndlCover
+                        });
+                    }
+                    return out;
+                });
+        })
+        .catch(function() { return []; });
+}
+
+function renderBookSearchCandidates(rawQuery, candidates) {
+    var status = document.getElementById("isbn-status");
+    var resultsBox = document.getElementById("isbn-search-results");
+    var input = document.getElementById("isbn-input");
+    if (!resultsBox) return;
+
+    resultsBox.textContent = "";
+
+    if (candidates && candidates.length > 0) {
+        if (status) {
+            status.textContent = "追加する本を選択してください（または下のボタンでそのままシート名として作成）：";
+        }
+        candidates.forEach(function(cand) {
+            var row = document.createElement("button");
+            row.type = "button";
+            row.className = "book-search-item";
+
+            if (cand.cover) {
+                var img = document.createElement("img");
+                img.className = "book-search-thumb";
+                img.src = cand.cover;
+                img.alt = cand.title;
+                img.addEventListener("error", function() {
+                    img.style.display = "none";
+                });
+                row.appendChild(img);
+            }
+
+            var textWrap = document.createElement("div");
+            textWrap.className = "book-search-text";
+
+            var titleSpan = document.createElement("span");
+            titleSpan.className = "book-search-title";
+            titleSpan.textContent = cand.title;
+            textWrap.appendChild(titleSpan);
+
+            var metaParts = [];
+            if (cand.author) metaParts.push(cand.author);
+            if (cand.isbn) metaParts.push("ISBN: " + cand.isbn);
+            if (metaParts.length > 0) {
+                var subSpan = document.createElement("span");
+                subSpan.className = "book-search-sub";
+                subSpan.textContent = metaParts.join(" / ");
+                textWrap.appendChild(subSpan);
+            }
+
+            row.appendChild(textWrap);
+
+            row.addEventListener("click", function() {
+                registerBookObject(cand.isbn || "", cand.title, cand.author || "", cand.cover || "");
+                if (input) input.value = "";
+                resultsBox.textContent = "";
+                if (status) status.textContent = "追加完了: 『" + cand.title + "』";
+            });
+
+            resultsBox.appendChild(row);
+        });
+    } else {
+        if (status) {
+            status.textContent = "「" + rawQuery + "」に一致する書籍データは見つかりませんでした。そのままシートとして作成できます：";
+        }
+    }
+
+    // 本ではない自由なシート名としてそのまま作成するボタン
+    var directBtn = document.createElement("button");
+    directBtn.type = "button";
+    directBtn.className = "book-search-direct";
+    directBtn.textContent = "＋ 「" + rawQuery + "」という名前のシートとしてそのまま作成";
+    directBtn.addEventListener("click", function() {
+        registerBookObject("", rawQuery, "");
+        if (input) input.value = "";
+        resultsBox.textContent = "";
+        if (status) status.textContent = "シート「" + rawQuery + "」を作成しました";
+    });
+    resultsBox.appendChild(directBtn);
 }
 
 function lookupBookByIsbnApi(isbn) {
@@ -505,22 +885,36 @@ function lookupBookByIsbnApi(isbn) {
     });
 }
 
-function registerBookObject(isbn, title, author) {
+function registerBookObject(isbn, title, author, coverUrl) {
     if (isEditPage()) {
         collectCurrentSheetLines();
     }
     var newId = "book_" + (isbn || Date.now());
-    var exists = bookList.some(function(b) { return b.id === newId; });
-    if (!exists) {
+    var finalCover = coverUrl || (isbn ? bookCoverCache[isbn] : "") || "";
+    var existingBook = null;
+    for (var i = 0; i < bookList.length; i++) {
+        if (bookList[i].id === newId) {
+            existingBook = bookList[i];
+            break;
+        }
+    }
+    if (!existingBook) {
         bookList.push({
             id: newId,
             isbn: isbn || "",
             title: title,
-            author: author || ""
+            author: author || "",
+            cover: finalCover
         });
         if (!sheetLines[newId]) {
             sheetLines[newId] = [];
         }
+    } else if (finalCover && !existingBook.cover) {
+        existingBook.cover = finalCover;
+    }
+    if (finalCover) {
+        bookCoverCache[newId] = finalCover;
+        if (isbn) bookCoverCache[isbn] = finalCover;
     }
     currentBookTab = newId;
     sessionStorage.setItem("kuji_book_tab", newId);
@@ -615,6 +1009,37 @@ function renderActiveBookMeta() {
     if (!metaBox) return;
 
     var activeId = isEditPage() ? getEffectiveBookIdForEdit() : currentBookTab;
+
+    // 「未分類（共通）」タブが選択されており、単語が1件以上ある場合は「別シートへ切り出す（アーカイブ）」バーを表示
+    if (activeId === "uncategorized") {
+        var uncatLines = sheetLines["uncategorized"] || [];
+        if (uncatLines.length === 0) {
+            metaBox.style.display = "none";
+            metaBox.textContent = "";
+            return;
+        }
+        metaBox.style.display = "flex";
+        metaBox.textContent = "";
+
+        var uncatLeft = document.createElement("div");
+        uncatLeft.className = "book-meta-left";
+        var uncatInfo = document.createElement("span");
+        uncatInfo.className = "book-meta-text";
+        uncatInfo.textContent = "未分類（共通）シート: " + uncatLines.length + " 件";
+        uncatLeft.appendChild(uncatInfo);
+        metaBox.appendChild(uncatLeft);
+
+        var archiveBtn = document.createElement("button");
+        archiveBtn.type = "button";
+        archiveBtn.className = "btn-book-archive";
+        archiveBtn.textContent = "別シートへ切り出す（アーカイブ）";
+        archiveBtn.addEventListener("click", function() {
+            archiveUncategorizedSheet();
+        });
+        metaBox.appendChild(archiveBtn);
+        return;
+    }
+
     var book = getBookById(activeId);
     if (!book) {
         metaBox.style.display = "none";
@@ -628,14 +1053,15 @@ function renderActiveBookMeta() {
     var leftGroup = document.createElement("div");
     leftGroup.className = "book-meta-left";
 
-    if (book.isbn) {
+    var cachedCover = book.cover || bookCoverCache[book.id] || (book.isbn ? bookCoverCache[book.isbn] : "");
+    if (book.isbn || cachedCover) {
         var coverImg = document.createElement("img");
         coverImg.className = "book-cover-thumb";
         coverImg.alt = book.title;
-        var ndlUrl = "https://ndlsearch.ndl.go.jp/thumbnail/" + encodeURIComponent(book.isbn) + ".jpg";
-        coverImg.src = bookCoverCache[book.isbn] || ndlUrl;
+        var ndlUrl = book.isbn ? ("https://ndlsearch.ndl.go.jp/thumbnail/" + encodeURIComponent(book.isbn) + ".jpg") : "";
+        coverImg.src = cachedCover || ndlUrl;
         coverImg.addEventListener("error", function() {
-            if (!coverImg.dataset.triedGoogle) {
+            if (book.isbn && !coverImg.dataset.triedGoogle) {
                 coverImg.dataset.triedGoogle = "1";
                 fetch("https://www.googleapis.com/books/v1/volumes?q=isbn:" + encodeURIComponent(book.isbn))
                     .then(function(r) { return r.json(); })
@@ -646,6 +1072,7 @@ function renderActiveBookMeta() {
                         if (thumb) {
                             var httpsThumb = thumb.replace(/^http:\/\//i, "https://");
                             bookCoverCache[book.isbn] = httpsThumb;
+                            book.cover = httpsThumb;
                             coverImg.src = httpsThumb;
                         } else {
                             coverImg.style.display = "none";
@@ -659,6 +1086,17 @@ function renderActiveBookMeta() {
             }
         });
         leftGroup.appendChild(coverImg);
+    } else if (book.author && !bookCoverCache["tried_" + book.id]) {
+        // 著者名が入っている（＝書籍として追加されたが過去データで表紙URLが未保存だった）場合のみ、自動で表紙を取得して永続保存
+        bookCoverCache["tried_" + book.id] = "1";
+        searchBooksViaAppleBooks(book.title + " " + book.author).then(function(resList) {
+            if (resList && resList[0] && resList[0].cover) {
+                book.cover = resList[0].cover;
+                bookCoverCache[book.id] = resList[0].cover;
+                saveAllSheets(true);
+                renderActiveBookMeta();
+            }
+        });
     }
 
     var infoSpan = document.createElement("span");
@@ -674,11 +1112,49 @@ function renderActiveBookMeta() {
     var delBookBtn = document.createElement("button");
     delBookBtn.type = "button";
     delBookBtn.className = "btn-book-remove";
-    delBookBtn.textContent = "本を削除";
+    delBookBtn.textContent = "シートを削除";
     delBookBtn.addEventListener("click", function() {
         deleteCurrentBook();
     });
     metaBox.appendChild(delBookBtn);
+}
+
+// 「未分類（共通）」に溜まった単語を名前付きシート（例：「共通 (2026/11)」）へ丸ごと切り出して空にする
+function archiveUncategorizedSheet() {
+    if (isEditPage()) {
+        collectCurrentSheetLines();
+    }
+    var lines = sheetLines["uncategorized"] || [];
+    if (lines.length === 0) {
+        alert("未分類（共通）シートにはまだ単語がありません。");
+        return;
+    }
+
+    var now = new Date();
+    var defaultName = "共通 (" + now.getFullYear() + "/" + String(now.getMonth() + 1).padStart(2, "0") + ")";
+    var sheetName = prompt(
+        "未分類（共通）にある " + lines.length + " 件の単語を新しいシートへ切り出します。\n" +
+        "切り出し先のシート名を入力してください（切り出し後、未分類シートは0件になり新しく使い始められます）：",
+        defaultName
+    );
+    if (!sheetName || !sheetName.trim()) return;
+
+    var cleanTitle = sheetName.trim();
+    var newId = "book_" + Date.now();
+    bookList.push({
+        id: newId,
+        isbn: "",
+        title: cleanTitle,
+        author: ""
+    });
+    sheetLines[newId] = lines.slice();
+    sheetLines["uncategorized"] = [];
+
+    currentBookTab = newId;
+    sessionStorage.setItem("kuji_book_tab", newId);
+    saveAllSheets(false);
+    refreshUI();
+    showSaveFeedback("「" + cleanTitle + "」へ " + lines.length + " 件を切り出しました");
 }
 
 // ==================== Wiktionary / Wikipedia 意味の自動取得 ====================
@@ -1330,7 +1806,7 @@ function parseFullBulkData(text) {
         var trimmed = line.trim();
         if (!trimmed) return;
 
-        // 書籍セクションヘッダー判定: # [BOOK:id|isbn|title|author]
+        // 書籍セクションヘッダー判定: # [BOOK:id|isbn|title|author|cover]
         var bookMatch = trimmed.match(/^#\s*\[BOOK:([^\]]+)\]\s*$/);
         if (bookMatch) {
             var parts = bookMatch[1].split("|");
@@ -1338,14 +1814,19 @@ function parseFullBulkData(text) {
             var bIsbn = (parts[1] || "").trim();
             var bTitle = (parts[2] || "").trim() || "無題の書籍";
             var bAuthor = (parts[3] || "").trim();
+            var bCover = (parts[4] || "").trim();
 
             if (!newSheets[bId]) {
                 newSheets[bId] = [];
+                if (bCover) {
+                    bookCoverCache[bId] = bCover;
+                }
                 newBooks.push({
                     id: bId,
                     isbn: bIsbn,
                     title: bTitle,
-                    author: bAuthor
+                    author: bAuthor,
+                    cover: bCover
                 });
             }
             currentBookId = bId;
@@ -1452,11 +1933,16 @@ function createWordCardElement(item) {
     });
     termWrap.appendChild(term);
 
-    // 「すべての本」表示中で書籍が設定されている場合は書名ラベルを表示
+    // 「すべての本」表示中で書籍が設定されている場合は書名ラベルを表示（クリックでその本へ移動可能）
     if (currentBookTab === "all_books" && item.bookId !== "uncategorized") {
-        var bookTag = document.createElement("span");
-        bookTag.className = "word-book-tag";
+        var bookTag = document.createElement("button");
+        bookTag.type = "button";
+        bookTag.className = "word-book-tag word-book-tag-clickable";
+        bookTag.title = "この本のシートへ移動";
         bookTag.textContent = getBookTitleById(item.bookId);
+        bookTag.addEventListener("click", function() {
+            selectBookTab(item.bookId);
+        });
         termWrap.appendChild(bookTag);
     }
 
@@ -1580,6 +2066,36 @@ function createWordCardElement(item) {
         });
         meaningRow.appendChild(input);
         editBox.appendChild(meaningRow);
+
+        if (bookList.length > 0) {
+            var bookRow = document.createElement("div");
+            bookRow.className = "inline-edit-row";
+            var bookLabel = document.createElement("span");
+            bookLabel.className = "inline-edit-label";
+            bookLabel.textContent = "移動";
+            bookRow.appendChild(bookLabel);
+
+            var bookSelect = document.createElement("select");
+            bookSelect.id = "inline-book-select-" + item.id;
+            bookSelect.className = "inline-edit-input inline-book-select";
+
+            var uncatOpt = document.createElement("option");
+            uncatOpt.value = "uncategorized";
+            uncatOpt.textContent = "未分類（共通）";
+            if (item.bookId === "uncategorized") uncatOpt.selected = true;
+            bookSelect.appendChild(uncatOpt);
+
+            bookList.forEach(function(b) {
+                var opt = document.createElement("option");
+                opt.value = b.id;
+                opt.textContent = b.title;
+                if (item.bookId === b.id) opt.selected = true;
+                bookSelect.appendChild(opt);
+            });
+
+            bookRow.appendChild(bookSelect);
+            editBox.appendChild(bookRow);
+        }
 
         var candidateBox = document.createElement("div");
         candidateBox.className = "inline-candidates";
@@ -1881,6 +2397,7 @@ function handleInlineKey(event, id, bookId, targetWord, wasNoMeaningNeeded) {
 function saveInlineMeaning(id, bookId, targetWord, wasNoMeaningNeeded) {
     var wordInput = document.getElementById("inline-word-input-" + id);
     var editInput = document.getElementById("inline-input-" + id);
+    var bookSelect = document.getElementById("inline-book-select-" + id);
     if (!editInput) return;
 
     var newWord = wordInput ? wordInput.value.trim() : targetWord;
@@ -1898,9 +2415,38 @@ function saveInlineMeaning(id, bookId, targetWord, wasNoMeaningNeeded) {
         newLine = newWord + " : ✓";
     }
 
+    var destBookId = bookSelect ? bookSelect.value : (bookId || "uncategorized");
+    var sourceBookId = bookId || "uncategorized";
+
     editingWordId = null;
     editingFocusWord = false;
-    updateSingleWordLine(bookId, targetWord, newLine);
+
+    if (destBookId !== sourceBookId) {
+        // 別の本（シート）へ単語を移動する
+        var srcLines = sheetLines[sourceBookId] || [];
+        var removed = false;
+        sheetLines[sourceBookId] = srcLines.filter(function(line) {
+            if (removed) return true;
+            var trimmed = line.trim();
+            if (!trimmed) return false;
+            var w = trimmed;
+            var m = trimmed.match(/^([^:：\t]+)[:：\t]/);
+            if (m) w = m[1].trim();
+            if (w === targetWord) {
+                removed = true;
+                return false;
+            }
+            return true;
+        });
+        if (!sheetLines[destBookId]) {
+            sheetLines[destBookId] = [];
+        }
+        sheetLines[destBookId].push(newLine);
+        saveAllSheets(false);
+        refreshUI();
+    } else {
+        updateSingleWordLine(sourceBookId, targetWord, newLine);
+    }
 }
 
 // ⑧ 単語の削除
