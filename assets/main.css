@@ -1489,3 +1489,22 @@ textarea#bulk-input:focus {
         font-size: 16px !important;
     }
 }
+
+/* 出典・クレジット表示 */
+.credits-footer {
+    margin-top: 1.2rem;
+    padding: 0.8rem 0.4rem 1.2rem;
+    border-top: 1px dashed #d4d2c8;
+    font-size: 0.7rem;
+    line-height: 1.6;
+    color: var(--text-muted);
+}
+
+.credits-footer p {
+    margin: 0 0 0.3rem;
+}
+
+.credits-footer a {
+    color: var(--text-secondary);
+    text-decoration: underline;
+}

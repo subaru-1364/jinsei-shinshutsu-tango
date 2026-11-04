@@ -491,9 +491,6 @@ function searchBooksByTitleKeyword(keyword) {
                             thumb = rawThumb.replace(/^http:\/\//i, "https://");
                         }
                     }
-                    if (!thumb && foundIsbn) {
-                        thumb = "https://ndlsearch.ndl.go.jp/thumbnail/" + encodeURIComponent(foundIsbn) + ".jpg";
-                    }
                     if (thumb && foundIsbn) {
                         bookCoverCache[foundIsbn] = thumb;
                     }
@@ -509,16 +506,12 @@ function searchBooksByTitleKeyword(keyword) {
         })
         .catch(function() { return []; });
 
-    // 2. Apple Books (iTunes Search API: APIキー不要・完全無料・日本語書籍と高画質書影に非常に強い)
-    var applePromise = searchBooksViaAppleBooks(kw);
-
-    // 3. Wikipedia 検索から書籍・小説ページのISBN/書誌を抽出してopenBDで裏付け取得
+    // 2. Wikipedia 検索から書籍・小説ページのISBN/書誌を抽出してopenBDで裏付け取得
     var wpBookPromise = searchBookViaWikipediaAndOpenBd(kw);
 
-    return Promise.all([applePromise, wpBookPromise, gbPromise]).then(function(results) {
-        var appleList = results[0] || [];
-        var wpList = results[1] || [];
-        var gbList = results[2] || [];
+    return Promise.all([wpBookPromise, gbPromise]).then(function(results) {
+        var wpList = results[0] || [];
+        var gbList = results[1] || [];
         var merged = [];
         var seenKey = {};
 
@@ -530,78 +523,10 @@ function searchBooksByTitleKeyword(keyword) {
             merged.push(c);
         }
 
-        // Apple Books・Wikipedia+openBD・Google Books の候補を統合
-        appleList.forEach(addBookCand);
+        // Wikipedia+openBD・Google Books の候補を統合
         wpList.forEach(addBookCand);
         gbList.forEach(addBookCand);
         return merged.slice(0, 6);
-    });
-}
-
-function searchBooksViaAppleBooks(keyword) {
-    // JSONP（動的scriptタグ）を使うことで、file:// や localhost、GitHub Pages でもCORSブロックを100%回避して取得する
-    return new Promise(function(resolve) {
-        var cbName = "__itunesBookCb_" + Date.now() + "_" + Math.floor(Math.random() * 10000);
-        var script = document.createElement("script");
-        var done = false;
-
-        function cleanup() {
-            if (script.parentNode) {
-                script.parentNode.removeChild(script);
-            }
-            try {
-                delete window[cbName];
-            } catch (e) {
-                window[cbName] = undefined;
-            }
-        }
-
-        var timer = setTimeout(function() {
-            if (done) return;
-            done = true;
-            cleanup();
-            resolve([]);
-        }, 4500);
-
-        window[cbName] = function(data) {
-            if (done) return;
-            done = true;
-            clearTimeout(timer);
-            cleanup();
-            var list = [];
-            if (data && Array.isArray(data.results)) {
-                data.results.forEach(function(item) {
-                    var title = item.trackName || item.collectionName || "";
-                    if (!title) return;
-                    // 成人向け・不適切コンテンツ（explicit）を除外
-                    if (item.trackExplicitness === "explicit" || item.collectionExplicitness === "explicit") return;
-                    var genres = Array.isArray(item.genres) ? item.genres.join(" ") : "";
-                    if (/アダルト|成人|BL|TL|官能/.test(genres) || /【18禁】|成人向|アダルト/.test(title)) return;
-
-                    var author = item.artistName || "";
-                    var cover = (item.artworkUrl100 || item.artworkUrl60 || "").replace(/^http:\/\//i, "https://");
-                    list.push({
-                        isbn: "",
-                        title: title,
-                        author: author,
-                        cover: cover
-                    });
-                });
-            }
-            resolve(list);
-        };
-
-        script.onerror = function() {
-            if (done) return;
-            done = true;
-            clearTimeout(timer);
-            cleanup();
-            resolve([]);
-        };
-
-        script.src = "https://itunes.apple.com/search?term=" + encodeURIComponent(keyword) +
-                     "&country=jp&media=ebook&explicit=No&limit=6&callback=" + cbName;
-        document.head.appendChild(script);
     });
 }
 
@@ -723,7 +648,7 @@ function searchBookViaWikipediaAndOpenBd(keyword) {
                             var code = isbns[idx];
                             if (entry && entry.summary && entry.summary.title) {
                                 var s = entry.summary;
-                                var cover = s.cover || ("https://ndlsearch.ndl.go.jp/thumbnail/" + encodeURIComponent(s.isbn || code) + ".jpg");
+                                var cover = s.cover || "";
                                 if (cover && (s.isbn || code)) {
                                     bookCoverCache[s.isbn || code] = cover;
                                 }
@@ -736,16 +661,13 @@ function searchBookViaWikipediaAndOpenBd(keyword) {
                             }
                         });
                     }
-                    // openBDにデータがなかったISBNでも、キーワード名＋NDL書影で候補作成
+                    // openBDにデータがなかったISBNでも、キーワード名で候補を作成（表紙なし）
                     if (out.length === 0 && isbns[0]) {
-                        var firstIsbn = isbns[0];
-                        var ndlCover = "https://ndlsearch.ndl.go.jp/thumbnail/" + encodeURIComponent(firstIsbn) + ".jpg";
-                        bookCoverCache[firstIsbn] = ndlCover;
                         out.push({
-                            isbn: firstIsbn,
+                            isbn: isbns[0],
                             title: fallbackTitle || keyword,
                             author: fallbackAuthor,
-                            cover: ndlCover
+                            cover: ""
                         });
                     }
                     return out;
@@ -868,10 +790,6 @@ function lookupBookByIsbnApi(isbn) {
                     cover = rawThumb.replace(/^http:\/\//i, "https://");
                 }
             }
-        }
-
-        if (!cover && isbn) {
-            cover = "https://ndlsearch.ndl.go.jp/thumbnail/" + encodeURIComponent(isbn) + ".jpg";
         }
 
         if (cover && isbn) {
@@ -1004,6 +922,24 @@ function renderBookTabs() {
     container.appendChild(fragment);
 }
 
+// ISBNから表紙画像URLのみを取得（openBD → Google Books の順。画像ファイル自体は保存しない）
+function fetchCoverUrlByIsbn(isbn) {
+    return fetch("https://api.openbd.jp/v1/get?isbn=" + encodeURIComponent(isbn))
+        .then(function(res) { return res.json(); })
+        .then(function(arr) {
+            var c = Array.isArray(arr) && arr[0] && arr[0].summary && arr[0].summary.cover;
+            if (c) return c;
+            return fetch("https://www.googleapis.com/books/v1/volumes?q=isbn:" + encodeURIComponent(isbn))
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    var il = d && d.items && d.items[0] && d.items[0].volumeInfo && d.items[0].volumeInfo.imageLinks;
+                    var t = il && (il.thumbnail || il.smallThumbnail);
+                    return t ? t.replace(/^http:\/\//i, "https://") : "";
+                });
+        })
+        .catch(function() { return ""; });
+}
+
 function renderActiveBookMeta() {
     var metaBox = document.getElementById("active-book-meta");
     if (!metaBox) return;
@@ -1054,45 +990,24 @@ function renderActiveBookMeta() {
     leftGroup.className = "book-meta-left";
 
     var cachedCover = book.cover || bookCoverCache[book.id] || (book.isbn ? bookCoverCache[book.isbn] : "");
-    if (book.isbn || cachedCover) {
+    if (cachedCover) {
         var coverImg = document.createElement("img");
         coverImg.className = "book-cover-thumb";
         coverImg.alt = book.title;
-        var ndlUrl = book.isbn ? ("https://ndlsearch.ndl.go.jp/thumbnail/" + encodeURIComponent(book.isbn) + ".jpg") : "";
-        coverImg.src = cachedCover || ndlUrl;
+        coverImg.referrerPolicy = "no-referrer";
+        coverImg.src = cachedCover;
         coverImg.addEventListener("error", function() {
-            if (book.isbn && !coverImg.dataset.triedGoogle) {
-                coverImg.dataset.triedGoogle = "1";
-                fetch("https://www.googleapis.com/books/v1/volumes?q=isbn:" + encodeURIComponent(book.isbn))
-                    .then(function(r) { return r.json(); })
-                    .then(function(d) {
-                        var thumb = d && d.items && d.items[0] && d.items[0].volumeInfo &&
-                                    d.items[0].volumeInfo.imageLinks &&
-                                    (d.items[0].volumeInfo.imageLinks.thumbnail || d.items[0].volumeInfo.imageLinks.smallThumbnail);
-                        if (thumb) {
-                            var httpsThumb = thumb.replace(/^http:\/\//i, "https://");
-                            bookCoverCache[book.isbn] = httpsThumb;
-                            book.cover = httpsThumb;
-                            coverImg.src = httpsThumb;
-                        } else {
-                            coverImg.style.display = "none";
-                        }
-                    })
-                    .catch(function() {
-                        coverImg.style.display = "none";
-                    });
-            } else {
-                coverImg.style.display = "none";
-            }
+            coverImg.style.display = "none";
         });
         leftGroup.appendChild(coverImg);
-    } else if (book.author && !bookCoverCache["tried_" + book.id]) {
-        // 著者名が入っている（＝書籍として追加されたが過去データで表紙URLが未保存だった）場合のみ、自動で表紙を取得して永続保存
+    } else if (book.isbn && !bookCoverCache["tried_" + book.id]) {
+        // ISBNはあるが表紙URL未保存の本：openBD → Google Books の順で取得し、URL文字列のみ保存（画像自体は保存しない）
         bookCoverCache["tried_" + book.id] = "1";
-        searchBooksViaAppleBooks(book.title + " " + book.author).then(function(resList) {
-            if (resList && resList[0] && resList[0].cover) {
-                book.cover = resList[0].cover;
-                bookCoverCache[book.id] = resList[0].cover;
+        fetchCoverUrlByIsbn(book.isbn).then(function(url) {
+            if (url) {
+                book.cover = url;
+                bookCoverCache[book.id] = url;
+                bookCoverCache[book.isbn] = url;
                 saveAllSheets(true);
                 renderActiveBookMeta();
             }
@@ -1815,6 +1730,8 @@ function parseFullBulkData(text) {
             var bTitle = (parts[2] || "").trim() || "無題の書籍";
             var bAuthor = (parts[3] || "").trim();
             var bCover = (parts[4] || "").trim();
+            // 過去に保存されたApple由来の表紙URL（規約上使用しない）は破棄
+            if (/mzstatic\.com|apple\.com/i.test(bCover)) bCover = "";
 
             if (!newSheets[bId]) {
                 newSheets[bId] = [];
