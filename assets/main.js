@@ -13,7 +13,7 @@ let sheetLines = { uncategorized: [] }; // bookId -> array of raw lines
 // index.html では "all_books", "uncategorized", または book.id
 // edit.html では "uncategorized" または book.id（1枚の巨大シートではなく本ごとのシートで管理）
 let currentBookTab = sessionStorage.getItem("kuji_book_tab") || "all_books";
-let currentFilterTab = sessionStorage.getItem("kuji_filter_tab") || "has";
+let currentFilterTab = sessionStorage.getItem("kuji_filter_tab") || "all";
 let hasUserSelectedTab = Boolean(sessionStorage.getItem("kuji_filter_tab"));
 
 let isDrawing = false;
