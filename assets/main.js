@@ -131,6 +131,7 @@ function refreshUI() {
     syncConfirmToggleUI();
     renderBookTabs();
     renderActiveBookMeta();
+    checkMilestoneBanner();
 
     // 編集画面（edit.html）の場合：選択中の本（または未分類）のシートだけを表示
     var textarea = document.getElementById("bulk-input");
@@ -883,40 +884,41 @@ function renderBookTabs() {
     var editMode = isEditPage();
     var activeTabId = editMode ? getEffectiveBookIdForEdit() : currentBookTab;
 
+    function createTabButton(id, titleText, count) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = (activeTabId === id) ? "book-tab active" : "book-tab";
+        btn.title = titleText + " (" + count + "件)";
+
+        var titleSpan = document.createElement("span");
+        titleSpan.className = "book-tab-title";
+        titleSpan.textContent = titleText;
+        btn.appendChild(titleSpan);
+
+        var countSpan = document.createElement("span");
+        countSpan.className = "book-tab-count";
+        countSpan.textContent = count;
+        btn.appendChild(countSpan);
+
+        btn.addEventListener("click", function() {
+            selectBookTab(id);
+        });
+        return btn;
+    }
+
     // index.html では「すべての本」タブを表示
     if (!editMode) {
-        var allBtn = document.createElement("button");
-        allBtn.type = "button";
-        allBtn.className = (activeTabId === "all_books") ? "book-tab active" : "book-tab";
-        allBtn.textContent = "すべて (" + wordList.length + ")";
-        allBtn.addEventListener("click", function() {
-            selectBookTab("all_books");
-        });
-        fragment.appendChild(allBtn);
+        fragment.appendChild(createTabButton("all_books", "すべて", wordList.length));
     }
 
     // 「未分類」タブ
     var uncatCount = wordList.filter(function(w) { return w.bookId === "uncategorized"; }).length;
-    var uncatBtn = document.createElement("button");
-    uncatBtn.type = "button";
-    uncatBtn.className = (activeTabId === "uncategorized") ? "book-tab active" : "book-tab";
-    uncatBtn.textContent = "未分類 (" + uncatCount + ")";
-    uncatBtn.addEventListener("click", function() {
-        selectBookTab("uncategorized");
-    });
-    fragment.appendChild(uncatBtn);
+    fragment.appendChild(createTabButton("uncategorized", "未分類", uncatCount));
 
     // 各書籍タブ
     bookList.forEach(function(book) {
         var bCount = wordList.filter(function(w) { return w.bookId === book.id; }).length;
-        var btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = (activeTabId === book.id) ? "book-tab active" : "book-tab";
-        btn.textContent = book.title + " (" + bCount + ")";
-        btn.addEventListener("click", function() {
-            selectBookTab(book.id);
-        });
-        fragment.appendChild(btn);
+        fragment.appendChild(createTabButton(book.id, book.title, bCount));
     });
 
     container.appendChild(fragment);
@@ -1034,8 +1036,86 @@ function renderActiveBookMeta() {
     metaBox.appendChild(delBookBtn);
 }
 
-// 「未分類（共通）」に溜まった単語を名前付きシート（例：「共通 (2026/11)」）へ丸ごと切り出して空にする
-function archiveUncategorizedSheet() {
+// 未分類が50単語（および50件刻みの節目：100, 150...）に達した際のお祝い＆切り出し提案バナー
+function checkMilestoneBanner() {
+    var banner = document.getElementById("milestone-banner");
+    if (!banner) return;
+
+    var uncatLines = sheetLines["uncategorized"] || [];
+    var count = uncatLines.length;
+
+    // 50件未満の場合は非表示
+    if (count < 50) {
+        banner.style.display = "none";
+        banner.textContent = "";
+        return;
+    }
+
+    var milestone = Math.floor(count / 50) * 50;
+    var dismissed = parseInt(localStorage.getItem("kuji_dismissed_milestone") || "0", 10);
+    // すでにこの節目（例: 50件時点）で「あとで」を押している場合は非表示（次回100件で再案内）
+    if (dismissed >= milestone) {
+        banner.style.display = "none";
+        banner.textContent = "";
+        return;
+    }
+
+    var now = new Date();
+    var dateStr = now.getFullYear() + "/" +
+        String(now.getMonth() + 1).padStart(2, "0") + "/" +
+        String(now.getDate()).padStart(2, "0");
+
+    banner.textContent = "";
+    banner.style.display = "flex";
+
+    var iconSpan = document.createElement("span");
+    iconSpan.className = "milestone-icon";
+    iconSpan.textContent = "🎉";
+    banner.appendChild(iconSpan);
+
+    var textDiv = document.createElement("div");
+    textDiv.className = "milestone-text-wrap";
+
+    var titleSpan = document.createElement("div");
+    titleSpan.className = "milestone-title";
+    titleSpan.textContent = "未分類が " + count + " 単語に達しました！（" + dateStr + "）";
+    textDiv.appendChild(titleSpan);
+
+    var descSpan = document.createElement("div");
+    descSpan.className = "milestone-desc";
+    descSpan.textContent = "「共通 (〜" + dateStr + ")」シートへ切り出して、未分類をすっきりリセットしますか？";
+    textDiv.appendChild(descSpan);
+
+    banner.appendChild(textDiv);
+
+    var btnGroup = document.createElement("div");
+    btnGroup.className = "milestone-btn-group";
+
+    var archiveBtn = document.createElement("button");
+    archiveBtn.type = "button";
+    archiveBtn.className = "btn-milestone-action";
+    archiveBtn.textContent = "今すぐ切り出す";
+    archiveBtn.addEventListener("click", function() {
+        archiveUncategorizedSheet(dateStr);
+    });
+    btnGroup.appendChild(archiveBtn);
+
+    var laterBtn = document.createElement("button");
+    laterBtn.type = "button";
+    laterBtn.className = "btn-milestone-later";
+    laterBtn.textContent = "あとで";
+    laterBtn.addEventListener("click", function() {
+        localStorage.setItem("kuji_dismissed_milestone", String(milestone));
+        banner.style.display = "none";
+        banner.textContent = "";
+    });
+    btnGroup.appendChild(laterBtn);
+
+    banner.appendChild(btnGroup);
+}
+
+// 「未分類（共通）」に溜まった単語を名前付きシート（例：「共通 (〜2026/11/04)」）へ丸ごと切り出して空にする
+function archiveUncategorizedSheet(customDateStr) {
     if (isEditPage()) {
         collectCurrentSheetLines();
     }
@@ -1046,7 +1126,10 @@ function archiveUncategorizedSheet() {
     }
 
     var now = new Date();
-    var defaultName = "共通 (" + now.getFullYear() + "/" + String(now.getMonth() + 1).padStart(2, "0") + ")";
+    var dateStr = customDateStr || (now.getFullYear() + "/" +
+        String(now.getMonth() + 1).padStart(2, "0") + "/" +
+        String(now.getDate()).padStart(2, "0"));
+    var defaultName = "共通 (〜" + dateStr + ")";
     var sheetName = prompt(
         "未分類（共通）にある " + lines.length + " 件の単語を新しいシートへ切り出します。\n" +
         "切り出し先のシート名を入力してください（切り出し後、未分類シートは0件になり新しく使い始められます）：",
@@ -1064,6 +1147,9 @@ function archiveUncategorizedSheet() {
     });
     sheetLines[newId] = lines.slice();
     sheetLines["uncategorized"] = [];
+
+    // 切り出し完了に伴い、マイルストーン無視記録をクリア
+    localStorage.removeItem("kuji_dismissed_milestone");
 
     currentBookTab = newId;
     sessionStorage.setItem("kuji_book_tab", newId);

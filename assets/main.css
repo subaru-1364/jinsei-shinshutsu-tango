@@ -254,7 +254,10 @@ body {
 }
 
 .book-tab {
-    padding: 0.32rem 0.65rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.3rem 0.55rem;
     font-family: inherit;
     font-size: 0.78rem;
     font-weight: 600;
@@ -264,10 +267,26 @@ body {
     border-radius: 5px;
     cursor: pointer;
     transition: all 0.15s;
-    max-width: 220px;
+    max-width: 185px;
+    white-space: nowrap;
+}
+
+.book-tab-title {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    min-width: 0;
+    flex: 1;
+}
+
+.book-tab-count {
+    flex-shrink: 0;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.05rem 0.35rem;
+    background: rgba(0, 0, 0, 0.06);
+    border-radius: 999px;
+    line-height: 1.2;
 }
 
 .book-tab:hover {
@@ -279,6 +298,103 @@ body {
     background-color: var(--primary-color);
     color: #ffffff;
     border-color: var(--primary-color);
+}
+
+.book-tab.active .book-tab-count {
+    background: rgba(255, 255, 255, 0.25);
+    color: #ffffff;
+}
+
+/* 50単語達成マイルストーン通知バナー */
+.milestone-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.65rem 0.85rem;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 6px;
+    margin-bottom: 0.65rem;
+    font-size: 0.82rem;
+    color: #92400e;
+    box-shadow: 0 1px 3px rgba(180, 83, 9, 0.08);
+}
+
+.milestone-icon {
+    font-size: 1.35rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.milestone-text-wrap {
+    flex: 1;
+    min-width: 0;
+}
+
+.milestone-title {
+    font-weight: 700;
+    color: #78350f;
+    font-size: 0.86rem;
+    margin-bottom: 0.15rem;
+}
+
+.milestone-desc {
+    color: #92400e;
+    font-size: 0.76rem;
+    line-height: 1.35;
+}
+
+.milestone-btn-group {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-shrink: 0;
+}
+
+.btn-milestone-action {
+    background: #d97706;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    padding: 0.38rem 0.7rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s;
+}
+
+.btn-milestone-action:hover {
+    background: #b45309;
+}
+
+.btn-milestone-later {
+    background: transparent;
+    color: #b45309;
+    border: 1px solid #fcd34d;
+    border-radius: 4px;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.76rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+}
+
+.btn-milestone-later:hover {
+    background: #fef3c7;
+    border-color: #f59e0b;
+}
+
+@media (max-width: 600px) {
+    .milestone-banner {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+    .milestone-btn-group {
+        width: 100%;
+        justify-content: flex-end;
+    }
 }
 
 .active-book-meta {
