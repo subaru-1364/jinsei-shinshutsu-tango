@@ -1688,3 +1688,63 @@ textarea#bulk-input:focus {
 .btn-inline-delete:hover {
     background-color: #fee2e2;
 }
+
+
+/* 編集画面：100件ごとのページ切り替え */
+.edit-pager {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-bottom: 0.5rem;
+}
+
+.edit-page-btn {
+    padding: 0.28rem 0.6rem;
+    font-family: inherit;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background-color: #f4f3ef;
+    border: 1px solid #dcdad0;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.edit-page-btn:hover {
+    color: var(--text-primary);
+    background-color: #eae8e0;
+}
+
+.edit-page-btn.active {
+    background-color: var(--primary-color);
+    color: #ffffff;
+    border-color: var(--primary-color);
+}
+
+
+/* 登録単語リスト：もっと見る */
+.btn-list-more {
+    display: block;
+    width: 100%;
+    margin-top: 0.6rem;
+    padding: 0.55rem 0.8rem;
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background-color: #f4f3ef;
+    border: 1px solid #dcdad0;
+    border-radius: 6px;
+    cursor: pointer;
+    grid-column: 1 / -1;
+}
+
+.btn-list-more:hover {
+    color: var(--text-primary);
+    background-color: #eae8e0;
+}
+
+/* ページ番号を中央寄せ */
+.edit-pager {
+    justify-content: center;
+}

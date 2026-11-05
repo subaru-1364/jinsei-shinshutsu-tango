@@ -34,6 +34,84 @@ let meaningConfirmQueue = [];
 let meaningConfirmIndex = 0;
 let meaningConfirmOnFinish = null;
 
+// ==================== 保存データの分割（チャンク）管理 ====================
+// 全シートの統合テキストを CHUNK_LINES 行ごとのチャンクに分けて localStorage / Firebase に保持する。
+// アプリ内部では従来どおり1本の統合テキストとして扱う（loadBulkText / storeBulkText が相互変換）。
+const CHUNK_LINES = 100;
+const EDIT_PAGE_SIZE = 100;
+const LIST_PAGE_SIZE = 100; // 登録単語リストの1ページあたりの件数
+let listPageIndex = 0;
+let cloudChunkCache = null; // 直近でクラウドから受信したチャンク（差分送信用）。未受信なら null
+
+function normalizeBulkText(text) {
+    return (text || "").split("\n").filter(function(l) { return l.trim() !== ""; }).join("\n");
+}
+
+function splitTextIntoChunks(text) {
+    var lines = normalizeBulkText(text).split("\n").filter(function(l) { return l !== ""; });
+    var chunks = [];
+    for (var i = 0; i < lines.length; i += CHUNK_LINES) {
+        chunks.push(lines.slice(i, i + CHUNK_LINES).join("\n"));
+    }
+    return chunks;
+}
+
+function chunkKey(i) {
+    return "c" + String(i).padStart(4, "0");
+}
+
+function loadBulkText() {
+    var countStr = localStorage.getItem("kuji_chunk_count");
+    if (countStr !== null) {
+        var n = parseInt(countStr, 10) || 0;
+        var parts = [];
+        for (var i = 0; i < n; i++) {
+            parts.push(localStorage.getItem("kuji_chunk_" + i) || "");
+        }
+        return parts.join("\n");
+    }
+    // 旧形式（分割前）からの移行用
+    return normalizeBulkText(localStorage.getItem("kuji_bulk_text") || "");
+}
+
+function hasChunkStore() {
+    return localStorage.getItem("kuji_chunk_count") !== null;
+}
+
+function storeBulkText(text) {
+    var norm = normalizeBulkText(text);
+    var chunks = splitTextIntoChunks(norm);
+    var oldCount = parseInt(localStorage.getItem("kuji_chunk_count") || "0", 10) || 0;
+    for (var i = 0; i < chunks.length; i++) {
+        if (localStorage.getItem("kuji_chunk_" + i) !== chunks[i]) {
+            localStorage.setItem("kuji_chunk_" + i, chunks[i]);
+        }
+    }
+    for (var j = chunks.length; j < oldCount; j++) {
+        localStorage.removeItem("kuji_chunk_" + j);
+    }
+    localStorage.setItem("kuji_chunk_count", String(chunks.length));
+    // 旧形式の巨大な1本テキストは削除（容量の重複消費を防止）
+    localStorage.removeItem("kuji_bulk_text");
+    localStorage.removeItem("kuji_items");
+    return norm;
+}
+
+function assembleCloudText(data) {
+    if (!data) return "";
+    if (data.chunks && typeof data.chunks === "object") {
+        var n = typeof data.chunkCount === "number" ? data.chunkCount : Object.keys(data.chunks).length;
+        var parts = [];
+        for (var i = 0; i < n; i++) {
+            var c = data.chunks[chunkKey(i)];
+            if (typeof c === "string") parts.push(c);
+        }
+        return normalizeBulkText(parts.join("\n"));
+    }
+    if (typeof data.bulkText === "string") return normalizeBulkText(data.bulkText);
+    return "";
+}
+
 function isLocalEnvironment() {
     var h = window.location.hostname;
     return h === "localhost" || h === "127.0.0.1" || window.location.protocol === "file:";
@@ -145,15 +223,24 @@ function refreshUI() {
     syncConfirmToggleUI();
     renderBookTabs();
     renderActiveBookMeta();
-    checkMilestoneBanner();
 
     // 編集画面（edit.html）の場合：選択中の本（または未分類）のシートだけを表示
     var textarea = document.getElementById("bulk-input");
     if (textarea) {
         var editBookId = getEffectiveBookIdForEdit();
-        var sheetText = (sheetLines[editBookId] || []).join("\n");
-        if (document.activeElement !== textarea || textarea.value !== sheetText) {
-            textarea.value = sheetText;
+        var allLines = sheetLines[editBookId] || [];
+        var forceReload = (editPageBookId !== editBookId);
+        if (forceReload) {
+            editPageIndex = 0;
+        }
+        editPageIndex = Math.min(Math.max(0, editPageIndex), getEditPageCount(allLines.length) - 1);
+        var pageStart = editPageIndex * EDIT_PAGE_SIZE;
+        var loadedText = allLines.slice(pageStart, pageStart + editLoadedCount).join("\n");
+        var keepTyping = !forceReload && document.activeElement === textarea && textarea.value === loadedText;
+        if (!keepTyping) {
+            loadEditPageIntoTextarea();
+        } else {
+            renderEditPager(allLines.length);
         }
         var sheetTitleElem = document.getElementById("editor-sheet-title");
         if (sheetTitleElem) {
@@ -181,6 +268,13 @@ function getBookTitleById(bookId) {
         if (bookList[i].id === bookId) return bookList[i].title;
     }
     return "未分類";
+}
+
+// 出典タグ用シート名。「未分類」所属の場合は空文字（タグ非表示）
+function getSourceTagText(bookId) {
+    if (!bookId || bookId === "uncategorized") return "";
+    var book = getBookById(bookId);
+    return book ? book.title : "";
 }
 
 function getBookById(bookId) {
@@ -223,8 +317,7 @@ function saveAllSheets(debounceCloud) {
 
 function saveBulkText(newText, debounceCloud) {
     var now = Date.now();
-    localStorage.setItem("kuji_bulk_text", newText);
-    localStorage.setItem("kuji_items", newText);
+    newText = storeBulkText(newText);
     localStorage.setItem("kuji_pending_sync", "1");
     localStorage.setItem("kuji_updated_at", String(now));
     syncWordList();
@@ -241,12 +334,33 @@ function saveBulkText(newText, debounceCloud) {
 
 function pushLocalToCloud(textToSave, clientTime) {
     if (!currentUser || !fbDb) return Promise.resolve();
-    return fbDb.ref("users/" + currentUser.uid).set({
-        bulkText: textToSave,
+    var norm = normalizeBulkText(textToSave);
+    var chunks = splitTextIntoChunks(norm);
+    var updates = {
+        bulkText: null, // 旧形式（1本テキスト）は削除
+        chunkCount: chunks.length,
         clientUpdatedAt: clientTime || Date.now(),
         updatedAt: firebase.database.ServerValue.TIMESTAMP
-    }).then(function() {
-        if ((localStorage.getItem("kuji_bulk_text") || "") === textToSave) {
+    };
+    if (cloudChunkCache === null) {
+        // クラウドの状態が不明な初回は chunks ノードごと置き換え
+        var all = {};
+        chunks.forEach(function(c, i) { all[chunkKey(i)] = c; });
+        updates.chunks = chunks.length > 0 ? all : null;
+    } else {
+        // 変更のあったチャンクだけを送信（不要になったものは削除）
+        var newKeys = {};
+        chunks.forEach(function(c, i) {
+            var k = chunkKey(i);
+            newKeys[k] = true;
+            if (cloudChunkCache[k] !== c) updates["chunks/" + k] = c;
+        });
+        Object.keys(cloudChunkCache).forEach(function(k) {
+            if (!newKeys[k]) updates["chunks/" + k] = null;
+        });
+    }
+    return fbDb.ref("users/" + currentUser.uid).update(updates).then(function() {
+        if (loadBulkText() === norm) {
             localStorage.removeItem("kuji_pending_sync");
         }
         updateSyncStatus("同期済み", true);
@@ -256,28 +370,104 @@ function pushLocalToCloud(textToSave, clientTime) {
     });
 }
 
+// ==================== 編集画面のページ分割（100件ごと） ====================
+let editPageIndex = 0;       // 表示中のページ（0始まり）
+let editPageBookId = null;   // textarea に読み込み済みのシート
+let editLoadedCount = 0;     // textarea に読み込んだ行数（差し戻し時の範囲）
+
+function getEditPageCount(total) {
+    return Math.max(1, Math.ceil(total / EDIT_PAGE_SIZE));
+}
+
+// textarea の内容を、現在のページに該当する範囲へ書き戻す
+function spliceTextareaIntoSheet(editBookId, textareaValue) {
+    var pageLines = textareaValue.split("\n").filter(function(l) { return l.trim() !== ""; });
+    var lines = sheetLines[editBookId] || [];
+    var start = editPageIndex * EDIT_PAGE_SIZE;
+    sheetLines[editBookId] = lines.slice(0, start).concat(pageLines, lines.slice(start + editLoadedCount));
+    editLoadedCount = pageLines.length;
+}
+
+// 現在のページを textarea に読み込む
+function loadEditPageIntoTextarea() {
+    var textarea = document.getElementById("bulk-input");
+    if (!textarea) return;
+    var editBookId = getEffectiveBookIdForEdit();
+    var all = sheetLines[editBookId] || [];
+    editPageBookId = editBookId;
+    editPageIndex = Math.min(Math.max(0, editPageIndex), getEditPageCount(all.length) - 1);
+    var start = editPageIndex * EDIT_PAGE_SIZE;
+    var pageLines = all.slice(start, start + EDIT_PAGE_SIZE);
+    textarea.value = pageLines.join("\n");
+    editLoadedCount = pageLines.length;
+    renderEditPager(all.length);
+}
+
+// 「1 2 3 …」形式のページ番号ボタンを描画する共通処理
+function renderPageNumbers(pager, total, pageSize, currentIndex, onSelect) {
+    var pageCount = Math.max(1, Math.ceil(total / pageSize));
+    pager.textContent = "";
+    if (pageCount <= 1) {
+        pager.style.display = "none";
+        return;
+    }
+    pager.style.display = "flex";
+    for (var i = 0; i < pageCount; i++) {
+        (function(idx) {
+            var btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = idx === currentIndex ? "edit-page-btn active" : "edit-page-btn";
+            btn.textContent = String(idx + 1);
+            btn.title = (idx * pageSize + 1) + "〜" + Math.min(total, (idx + 1) * pageSize) + "件目";
+            if (idx === currentIndex) btn.setAttribute("aria-current", "page");
+            btn.addEventListener("click", function() { onSelect(idx); });
+            pager.appendChild(btn);
+        })(i);
+    }
+}
+
+function renderEditPager(total) {
+    var pager = document.getElementById("edit-pager");
+    if (!pager) return;
+    renderPageNumbers(pager, total, EDIT_PAGE_SIZE, editPageIndex, switchEditPage);
+}
+
+function switchEditPage(idx) {
+    if (idx === editPageIndex) return;
+    collectCurrentSheetLines();
+    saveAllSheets(true);
+    editPageIndex = idx;
+    refreshUI();
+    var textarea = document.getElementById("bulk-input");
+    if (textarea) textarea.scrollTop = 0;
+}
+
 // 編集画面の内容（新規追加欄に未追加の文字がある場合も含む）を現在のシートに統合
 function collectCurrentSheetLines() {
     var editBookId = getEffectiveBookIdForEdit();
     var textarea = document.getElementById("bulk-input");
     var quickInput = document.getElementById("quick-add-input");
 
-    var baseText = textarea ? textarea.value : ((sheetLines[editBookId] || []).join("\n"));
+    // textarea がまだ読み込まれていない（初期化前）場合は上書きしない
+    if (textarea && editPageBookId === editBookId) {
+        spliceTextareaIntoSheet(editBookId, textarea.value);
+    }
 
     if (quickInput && quickInput.value.trim()) {
-        var quickRaw = quickInput.value.trim();
-        baseText = baseText.trim() ? (baseText.replace(/\s+$/, "") + "\n" + quickRaw) : quickRaw;
+        var quickLines = quickInput.value.trim().split("\n").filter(function(l) { return l.trim() !== ""; });
         quickInput.value = "";
+        sheetLines[editBookId] = (sheetLines[editBookId] || []).concat(quickLines);
+        // 追加した単語が見えるよう最終ページへ移動
+        editPageIndex = getEditPageCount(sheetLines[editBookId].length) - 1;
         if (textarea) {
-            textarea.value = baseText;
+            loadEditPageIntoTextarea();
             textarea.scrollTop = textarea.scrollHeight;
         }
-        var targetTab = /[:：\t]/.test(quickRaw) ? "has" : "none";
+        var targetTab = quickLines.some(function(l) { return !/[:：\t]/.test(l); }) ? "none" : "has";
         sessionStorage.setItem("kuji_filter_tab", targetTab);
     }
 
-    sheetLines[editBookId] = baseText.split("\n").filter(function(l) { return l.trim() !== ""; });
-    return baseText;
+    return (sheetLines[editBookId] || []).join("\n");
 }
 
 // 「保存する」ボタンによる明示的保存
@@ -311,9 +501,7 @@ function showSaveFeedback(msg) {
 // 編集画面から「一覧に戻る」を押したときに未送信データを確実に保存してから遷移
 function returnToIndex(event) {
     collectCurrentSheetLines();
-    var finalText = serializeFullBulkData();
-    localStorage.setItem("kuji_bulk_text", finalText);
-    localStorage.setItem("kuji_items", finalText);
+    var finalText = storeBulkText(serializeFullBulkData());
     localStorage.setItem("kuji_pending_sync", "1");
     localStorage.setItem("kuji_updated_at", String(Date.now()));
 
@@ -457,6 +645,8 @@ function addQuickWord() {
     });
 
     input.value = "";
+    // 編集中のページ内容を先にシートへ反映（以降の追加は最下部＝最終ページへ）
+    collectCurrentSheetLines();
 
     // すべて重複していた場合
     if (validLinesToAdd.length === 0) {
@@ -477,7 +667,8 @@ function addQuickWord() {
     saveAllSheets(false);
 
     if (textarea) {
-        textarea.value = (sheetLines[editBookId] || []).join("\n");
+        editPageIndex = getEditPageCount((sheetLines[editBookId] || []).length) - 1;
+        loadEditPageIntoTextarea();
         textarea.scrollTop = textarea.scrollHeight;
     }
     refreshUI();
@@ -993,6 +1184,7 @@ function selectBookTab(bookId) {
     }
     if (currentBookTab !== bookId) {
         currentBookTab = bookId;
+        listPageIndex = 0;
         sessionStorage.setItem("kuji_book_tab", bookId);
         // タブ切り替え時は前のシートの山札をクリアして新しいプールで再構築
         drawDeck = [];
@@ -1134,33 +1326,10 @@ function renderActiveBookMeta() {
 
     var activeId = isEditPage() ? getEffectiveBookIdForEdit() : currentBookTab;
 
-    // 「未分類（共通）」タブが選択されており、単語が1件以上ある場合は「別シートへ切り出す（アーカイブ）」バーを表示
+    // 「未分類」はシートではなく常に1つの共通枠のため、付随情報は表示しない
     if (activeId === "uncategorized") {
-        var uncatLines = sheetLines["uncategorized"] || [];
-        if (uncatLines.length === 0) {
-            metaBox.style.display = "none";
-            metaBox.textContent = "";
-            return;
-        }
-        metaBox.style.display = "flex";
+        metaBox.style.display = "none";
         metaBox.textContent = "";
-
-        var uncatLeft = document.createElement("div");
-        uncatLeft.className = "book-meta-left";
-        var uncatInfo = document.createElement("span");
-        uncatInfo.className = "book-meta-text";
-        uncatInfo.textContent = "未分類（共通）シート: " + uncatLines.length + " 件";
-        uncatLeft.appendChild(uncatInfo);
-        metaBox.appendChild(uncatLeft);
-
-        var archiveBtn = document.createElement("button");
-        archiveBtn.type = "button";
-        archiveBtn.className = "btn-book-archive";
-        archiveBtn.textContent = "別シートへ切り出す（アーカイブ）";
-        archiveBtn.addEventListener("click", function() {
-            archiveUncategorizedSheet();
-        });
-        metaBox.appendChild(archiveBtn);
         return;
     }
 
@@ -1220,131 +1389,6 @@ function renderActiveBookMeta() {
         deleteCurrentBook();
     });
     metaBox.appendChild(delBookBtn);
-}
-
-// 次の共通アーカイブシート名（「共通 1」「共通 2」…）を自動採番
-function getNextArchiveSheetTitle() {
-    var existingTitles = bookList.map(function(b) { return b.title; });
-    var count = 1;
-    while (existingTitles.indexOf("共通 " + count) !== -1 || existingTitles.indexOf("共通" + count) !== -1) {
-        count++;
-    }
-    return "共通 " + count;
-}
-
-// 未分類が50単語（および50件刻みの節目：100, 150...）に達した際のお祝い＆切り出し提案バナー
-function checkMilestoneBanner() {
-    var banner = document.getElementById("milestone-banner");
-    if (!banner) return;
-
-    var uncatLines = sheetLines["uncategorized"] || [];
-    var count = uncatLines.length;
-
-    // 50件未満の場合は非表示
-    if (count < 50) {
-        banner.style.display = "none";
-        banner.textContent = "";
-        return;
-    }
-
-    var milestone = Math.floor(count / 50) * 50;
-    var dismissed = parseInt(localStorage.getItem("kuji_dismissed_milestone") || "0", 10);
-    // すでにこの節目（例: 50件時点）で「あとで」を押している場合は非表示（次回100件で再案内）
-    if (dismissed >= milestone) {
-        banner.style.display = "none";
-        banner.textContent = "";
-        return;
-    }
-
-    var targetTitle = getNextArchiveSheetTitle();
-
-    banner.textContent = "";
-    banner.style.display = "flex";
-
-    var iconSpan = document.createElement("span");
-    iconSpan.className = "milestone-icon";
-    iconSpan.textContent = "🎉";
-    banner.appendChild(iconSpan);
-
-    var textDiv = document.createElement("div");
-    textDiv.className = "milestone-text-wrap";
-
-    var titleSpan = document.createElement("div");
-    titleSpan.className = "milestone-title";
-    titleSpan.textContent = "未分類が " + count + " 単語に達しました！";
-    textDiv.appendChild(titleSpan);
-
-    var descSpan = document.createElement("div");
-    descSpan.className = "milestone-desc";
-    descSpan.textContent = "「" + targetTitle + "」シートへ切り出して、未分類をすっきりリセットしますか？";
-    textDiv.appendChild(descSpan);
-
-    banner.appendChild(textDiv);
-
-    var btnGroup = document.createElement("div");
-    btnGroup.className = "milestone-btn-group";
-
-    var archiveBtn = document.createElement("button");
-    archiveBtn.type = "button";
-    archiveBtn.className = "btn-milestone-action";
-    archiveBtn.textContent = "今すぐ切り出す";
-    archiveBtn.addEventListener("click", function() {
-        archiveUncategorizedSheet(targetTitle);
-    });
-    btnGroup.appendChild(archiveBtn);
-
-    var laterBtn = document.createElement("button");
-    laterBtn.type = "button";
-    laterBtn.className = "btn-milestone-later";
-    laterBtn.textContent = "あとで";
-    laterBtn.addEventListener("click", function() {
-        localStorage.setItem("kuji_dismissed_milestone", String(milestone));
-        banner.style.display = "none";
-        banner.textContent = "";
-    });
-    btnGroup.appendChild(laterBtn);
-
-    banner.appendChild(btnGroup);
-}
-
-// 「未分類（共通）」に溜まった単語を名前付きシート（例：「共通 1」）へ丸ごと切り出して空にする
-function archiveUncategorizedSheet(customSheetName) {
-    if (isEditPage()) {
-        collectCurrentSheetLines();
-    }
-    var lines = sheetLines["uncategorized"] || [];
-    if (lines.length === 0) {
-        alert("未分類（共通）シートにはまだ単語がありません。");
-        return;
-    }
-
-    var defaultName = customSheetName || getNextArchiveSheetTitle();
-    var sheetName = prompt(
-        "未分類（共通）にある " + lines.length + " 件の単語を新しいシートへ切り出します。\n" +
-        "切り出し先のシート名を入力してください（切り出し後、未分類シートは0件になり新しく使い始められます）：",
-        defaultName
-    );
-    if (!sheetName || !sheetName.trim()) return;
-
-    var cleanTitle = sheetName.trim();
-    var newId = "book_" + Date.now();
-    bookList.push({
-        id: newId,
-        isbn: "",
-        title: cleanTitle,
-        author: ""
-    });
-    sheetLines[newId] = lines.slice();
-    sheetLines["uncategorized"] = [];
-
-    // 切り出し完了に伴い、マイルストーン無視記録をクリア
-    localStorage.removeItem("kuji_dismissed_milestone");
-
-    currentBookTab = newId;
-    sessionStorage.setItem("kuji_book_tab", newId);
-    saveAllSheets(false);
-    refreshUI();
-    showSaveFeedback("「" + cleanTitle + "」へ " + lines.length + " 件を切り出しました");
 }
 
 // ==================== Wiktionary / Wikipedia 意味の自動取得 ====================
@@ -1892,13 +1936,14 @@ function startCloudSync(user) {
 
     activeDbRef = fbDb.ref("users/" + user.uid);
     activeDbRef.on("value", function(snapshot) {
-        var localText = localStorage.getItem("kuji_bulk_text") || "";
+        var localText = loadBulkText();
         var hasPendingLocal = (localStorage.getItem("kuji_pending_sync") === "1");
         var localUpdatedAt = Number(localStorage.getItem("kuji_updated_at") || 0);
 
         if (snapshot.exists()) {
             var data = snapshot.val();
-            var cloudText = (data && typeof data.bulkText === "string") ? data.bulkText : "";
+            var cloudText = assembleCloudText(data);
+            cloudChunkCache = (data && data.chunks && typeof data.chunks === "object") ? Object.assign({}, data.chunks) : {};
             var cloudUpdatedAt = (data && typeof data.clientUpdatedAt === "number") ? data.clientUpdatedAt : 0;
 
             // ① ローカルに未送信の変更がある、またはローカルの更新日時のほうが新しい場合は、ローカルを最優先保護
@@ -1918,8 +1963,7 @@ function startCloudSync(user) {
             // ③ クラウドのほうが確実に新しい（cloudUpdatedAt > localUpdatedAt）場合のみローカルを更新
             if (cloudText !== localText) {
                 if (cloudUpdatedAt >= localUpdatedAt) {
-                    localStorage.setItem("kuji_bulk_text", cloudText);
-                    localStorage.setItem("kuji_items", cloudText);
+                    storeBulkText(cloudText);
                     localStorage.setItem("kuji_updated_at", String(cloudUpdatedAt));
                     localStorage.removeItem("kuji_pending_sync");
                     syncWordList();
@@ -1930,6 +1974,7 @@ function startCloudSync(user) {
             }
             updateSyncStatus("同期済み", true);
         } else {
+            cloudChunkCache = {};
             if (localText.trim()) {
                 pushLocalToCloud(localText, Date.now());
             }
@@ -1942,7 +1987,7 @@ function startCloudSync(user) {
 
 // ② ユーザーが保存していた元データ（kuji_items）を最優先で復旧する
 function recoverOriginalUserData() {
-    var currentBulk = localStorage.getItem("kuji_bulk_text");
+    var currentBulk = hasChunkStore() ? loadBulkText() : localStorage.getItem("kuji_bulk_text");
     var originalItems = localStorage.getItem("kuji_items");
     var oldWordsV2 = localStorage.getItem("kuji_words_v2");
 
@@ -1969,8 +2014,7 @@ function recoverOriginalUserData() {
         .replace(/[:：\t]\s*（意味未設定）/g, "")
         .replace(/[:：\t]\s*\(意味未設定\)/g, "");
 
-    localStorage.setItem("kuji_bulk_text", cleaned);
-    localStorage.setItem("kuji_items", cleaned);
+    storeBulkText(cleaned);
 }
 
 function cleanMeaning(str) {
@@ -1993,13 +2037,12 @@ function isKnownMarker(str) {
 
 // ③ テキストを解析して本棚（bookList / sheetLines）と単語リスト（wordList）を同期
 function syncWordList() {
-    var text = localStorage.getItem("kuji_bulk_text") || "";
+    var text = loadBulkText();
     parseFullBulkData(text);
     // すでに存在する全シート間の重複を自動クリーンアップ（意味あり・書籍側を優先保持）
     if (deduplicateAllSheets()) {
         var cleanText = serializeFullBulkData();
-        localStorage.setItem("kuji_bulk_text", cleanText);
-        localStorage.setItem("kuji_items", cleanText);
+        storeBulkText(cleanText);
         parseFullBulkData(cleanText);
         if (currentUser && fbDb) {
             pushLocalToCloud(cleanText, Date.now());
@@ -2098,12 +2141,15 @@ function handleBulkInput() {
     if (!textarea) return;
 
     var editBookId = getEffectiveBookIdForEdit();
-    sheetLines[editBookId] = textarea.value.split("\n").filter(function(l) { return l.trim() !== ""; });
+    if (editPageBookId === editBookId) {
+        spliceTextareaIntoSheet(editBookId, textarea.value);
+    }
     saveAllSheets(true);
 
     var sheetWords = wordList.filter(function(w) { return w.bookId === editBookId; });
     updateWordCountBadge(sheetWords.length);
     renderBookTabs();
+    renderEditPager((sheetLines[editBookId] || []).length);
 }
 
 function updateWordCountBadge(count) {
@@ -2216,10 +2262,13 @@ function createWordCardElement(item) {
     top.appendChild(actions);
     card.appendChild(top);
 
-    var sourceTag = document.createElement("div");
-    sourceTag.className = "word-source";
-    sourceTag.textContent = getBookTitleById(item.bookId);
-    card.appendChild(sourceTag);
+    var sourceText = getSourceTagText(item.bookId);
+    if (sourceText) {
+        var sourceTag = document.createElement("div");
+        sourceTag.className = "word-source";
+        sourceTag.textContent = sourceText;
+        card.appendChild(sourceTag);
+    }
 
     if (isEditing) {
         var editBox = document.createElement("div");
@@ -2441,52 +2490,22 @@ function renderWordCards(filterKeyword) {
         });
     }
 
-    var withMeaningList = searchedList.filter(function(item) {
-        return (item.meaning && item.meaning.trim() !== "") || Boolean(item.noMeaningNeeded);
-    });
-    var withoutMeaningList = searchedList.filter(function(item) {
-        return (!item.meaning || item.meaning.trim() === "") && !item.noMeaningNeeded;
-    });
-
-    if (!hasUserSelectedTab && currentFilterTab === "has" && withMeaningList.length === 0 && withoutMeaningList.length > 0) {
-        currentFilterTab = "none";
-    }
-
-    var countHasElem = document.getElementById("count-has-meaning");
-    var countNoElem = document.getElementById("count-no-meaning");
-    var countAllElem = document.getElementById("count-all");
-    if (countHasElem) countHasElem.textContent = String(withMeaningList.length);
-    if (countNoElem) countNoElem.textContent = String(withoutMeaningList.length);
-    if (countAllElem) countAllElem.textContent = String(searchedList.length);
-
-    var tabHas = document.getElementById("tab-has-meaning");
-    var tabNo = document.getElementById("tab-no-meaning");
-    var tabAll = document.getElementById("tab-all");
-    if (tabHas) tabHas.classList.toggle("active", currentFilterTab === "has");
-    if (tabNo) tabNo.classList.toggle("active", currentFilterTab === "none");
-    if (tabAll) tabAll.classList.toggle("active", currentFilterTab === "all");
-
+    // 意味の有無によるグループ分けは行わず、登録順のフラットな1リストで表示
     var displayList = searchedList;
-    if (currentFilterTab === "has") {
-        displayList = withMeaningList;
-    } else if (currentFilterTab === "none") {
-        displayList = withoutMeaningList;
-    }
 
     if (filteredCountElem) {
         filteredCountElem.innerText = displayList.length + " 件";
     }
 
+    container.textContent = "";
+
     if (displayList.length === 0) {
-        container.textContent = "";
+        var emptyPager = document.getElementById("list-pager");
+        if (emptyPager) emptyPager.style.display = "none";
         var emptyDiv = document.createElement("div");
         emptyDiv.className = "empty-state";
         if (filterKeyword && filterKeyword.trim() !== "") {
             emptyDiv.textContent = "「" + filterKeyword + "」に一致する単語は見つかりませんでした";
-        } else if (currentFilterTab === "has" && withoutMeaningList.length > 0) {
-            emptyDiv.textContent = "意味が登録されている単語はまだありません（「意味なし」タブに " + withoutMeaningList.length + " 件あります）";
-        } else if (currentFilterTab === "none" && withMeaningList.length > 0) {
-            emptyDiv.textContent = "意味が未登録の単語はありません（すべての単語に意味がついています）";
         } else {
             emptyDiv.appendChild(document.createTextNode("このシートにはまだ単語が登録されていません。"));
             emptyDiv.appendChild(document.createElement("br"));
@@ -2500,32 +2519,27 @@ function renderWordCards(filterKeyword) {
         return;
     }
 
-    container.textContent = "";
-    var fragment = document.createDocumentFragment();
+    // 1ページ100件。ページ番号は一覧上部に表示
+    var listPageCount = Math.max(1, Math.ceil(displayList.length / LIST_PAGE_SIZE));
+    listPageIndex = Math.min(Math.max(0, listPageIndex), listPageCount - 1);
+    var pageStart = listPageIndex * LIST_PAGE_SIZE;
+    var visibleList = displayList.slice(pageStart, pageStart + LIST_PAGE_SIZE);
 
-    if (currentFilterTab === "all" && withMeaningList.length > 0 && withoutMeaningList.length > 0) {
-        var headerHas = document.createElement("div");
-        headerHas.className = "word-group-title";
-        headerHas.textContent = "意味あり（" + withMeaningList.length + "件）";
-        fragment.appendChild(headerHas);
-
-        withMeaningList.forEach(function(item) {
-            fragment.appendChild(createWordCardElement(item));
-        });
-
-        var headerNone = document.createElement("div");
-        headerNone.className = "word-group-title word-group-title-spaced";
-        headerNone.textContent = "意味なし（" + withoutMeaningList.length + "件）";
-        fragment.appendChild(headerNone);
-
-        withoutMeaningList.forEach(function(item) {
-            fragment.appendChild(createWordCardElement(item));
-        });
-    } else {
-        displayList.forEach(function(item) {
-            fragment.appendChild(createWordCardElement(item));
+    var listPager = document.getElementById("list-pager");
+    if (listPager) {
+        renderPageNumbers(listPager, displayList.length, LIST_PAGE_SIZE, listPageIndex, function(idx) {
+            listPageIndex = idx;
+            editingWordId = null;
+            var si = document.getElementById("search-input");
+            renderWordCards(si ? si.value : "");
+            container.scrollTop = 0;
         });
     }
+
+    var fragment = document.createDocumentFragment();
+    visibleList.forEach(function(item) {
+        fragment.appendChild(createWordCardElement(item));
+    });
 
     container.appendChild(fragment);
 
@@ -2672,6 +2686,7 @@ function deleteWordFromSheet(bookId, targetWord) {
 
 // ⑨ 検索入力
 function handleSearch() {
+    listPageIndex = 0;
     var searchInput = document.getElementById("search-input");
     var keyword = searchInput ? searchInput.value : "";
     renderWordCards(keyword);
@@ -2830,7 +2845,8 @@ function setDrawResult(selected) {
     }
     var resultSource = document.getElementById("result-source");
     if (resultSource) {
-        resultSource.textContent = getBookTitleById(selected.bookId);
-        resultSource.style.display = "";
+        var srcText = getSourceTagText(selected.bookId);
+        resultSource.textContent = srcText;
+        resultSource.style.display = srcText ? "" : "none";
     }
 }

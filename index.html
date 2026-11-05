@@ -8,11 +8,11 @@
     <link rel="icon" type="image/png" href="./assets/icon.png?v=6">
     <link rel="apple-touch-icon" href="./assets/icon.png?v=6">
 
-    <link rel="stylesheet" href="./assets/main.css?v=57">
+    <link rel="stylesheet" href="./assets/main.css?v=61">
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js" defer></script>
-    <script src="./assets/main.js?v=57" defer></script>
+    <script src="./assets/main.js?v=60" defer></script>
 </head>
 <body>
     <div class="app-wrapper">
@@ -71,8 +71,6 @@
                     <div id="isbn-search-results" class="isbn-search-results"></div>
                 </div>
 
-                <div id="milestone-banner" class="milestone-banner" style="display: none;"></div>
-
                 <div id="book-tabs" class="book-tabs is-collapsed" role="tablist" aria-label="書籍の切り替え"></div>
                 <button type="button" id="book-tabs-toggle" class="btn-tabs-toggle" aria-expanded="false" aria-controls="book-tabs" onclick="toggleBookTabsExpanded()" style="display: none;">すべて表示</button>
                 <div id="active-book-meta" class="active-book-meta" style="display: none;"></div>
@@ -116,6 +114,9 @@
                     <svg class="search-svg" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2L13.5 13.5"/></svg>
                     <input type="text" id="search-input" placeholder="検索..." oninput="handleSearch()">
                 </div>
+
+                <!-- ページ番号（100件ごと） -->
+                <div id="list-pager" class="edit-pager list-pager" style="display: none;" aria-label="ページ切り替え（100件ごと）"></div>
 
                 <!-- 単語カード一覧コンテナ -->
                 <div id="word-list" class="word-list" role="list">

@@ -8,11 +8,11 @@
     <link rel="icon" type="image/png" href="./assets/icon.png?v=6">
     <link rel="apple-touch-icon" href="./assets/icon.png?v=6">
 
-    <link rel="stylesheet" href="./assets/main.css?v=57">
+    <link rel="stylesheet" href="./assets/main.css?v=61">
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js" defer></script>
-    <script src="./assets/main.js?v=57" defer></script>
+    <script src="./assets/main.js?v=60" defer></script>
 </head>
 <body>
     <div class="app-wrapper">
@@ -71,8 +71,6 @@
                     <div id="isbn-search-results" class="isbn-search-results"></div>
                 </div>
 
-                <div id="milestone-banner" class="milestone-banner" style="display: none;"></div>
-
                 <div id="book-tabs" class="book-tabs" role="tablist" aria-label="編集する書籍の切り替え"></div>
                 <div id="active-book-meta" class="active-book-meta" style="display: none;"></div>
             </section>
@@ -103,6 +101,8 @@
                         <span id="word-count" class="count-badge">0 件</span>
                     </div>
                 </div>
+
+                <div id="edit-pager" class="edit-pager" style="display: none;" aria-label="ページ切り替え（100件ごと）"></div>
 
                 <div class="textarea-wrapper">
                     <textarea id="bulk-input" rows="12" placeholder="単語を改行区切りで入力..." oninput="handleBulkInput()"></textarea>
