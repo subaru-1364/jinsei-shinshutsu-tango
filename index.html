@@ -8,11 +8,11 @@
     <link rel="icon" type="image/png" href="./assets/icon.png?v=6">
     <link rel="apple-touch-icon" href="./assets/icon.png?v=6">
 
-    <link rel="stylesheet" href="./assets/main.css?v=56">
+    <link rel="stylesheet" href="./assets/main.css?v=57">
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js" defer></script>
-    <script src="./assets/main.js?v=56" defer></script>
+    <script src="./assets/main.js?v=57" defer></script>
 </head>
 <body>
     <div class="app-wrapper">
@@ -73,7 +73,8 @@
 
                 <div id="milestone-banner" class="milestone-banner" style="display: none;"></div>
 
-                <div id="book-tabs" class="book-tabs" role="tablist" aria-label="書籍の切り替え"></div>
+                <div id="book-tabs" class="book-tabs is-collapsed" role="tablist" aria-label="書籍の切り替え"></div>
+                <button type="button" id="book-tabs-toggle" class="btn-tabs-toggle" aria-expanded="false" aria-controls="book-tabs" onclick="toggleBookTabsExpanded()" style="display: none;">すべて表示</button>
                 <div id="active-book-meta" class="active-book-meta" style="display: none;"></div>
             </section>
 
@@ -85,7 +86,6 @@
                             <svg class="icon-line icon-subtle" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 5.5h8.5l-2-2M13.5 10.5H5l2 2"/></svg>
                             ランダムピックアップ
                         </span>
-                        <span id="draw-deck-info" class="draw-deck-info"></span>
                     </div>
                     <button id="draw-btn" class="btn btn-primary btn-draw-compact" onclick="drawWord()">
                         引く
@@ -95,6 +95,7 @@
                 <div id="draw-result" class="draw-result-box" style="display: none;" aria-live="polite">
                     <div id="result-word" class="result-word"></div>
                     <div id="result-meaning" class="result-meaning"></div>
+                    <div id="result-source" class="word-source" style="display: none;"></div>
                 </div>
             </section>
 
@@ -108,23 +109,6 @@
                         </h2>
                         <span id="filtered-count" class="count-badge">0 件</span>
                     </div>
-                    <label class="setting-toggle" title="ONにすると辞書から意味を取得した際に「この意味でよいか」の確認画面を出します">
-                        <input type="checkbox" id="confirm-meaning-toggle" onchange="handleConfirmSettingChange(this.checked)">
-                        <span>意味の自動取得時に確認する</span>
-                    </label>
-                </div>
-
-                <!-- 意味あり / 意味なし 切り替えタブ -->
-                <div class="filter-tabs" role="tablist" aria-label="単語の表示切り替え">
-                    <button type="button" id="tab-all" class="filter-tab active" onclick="setFilterTab('all')">
-                        すべて <span id="count-all" class="tab-count">0</span>
-                    </button>
-                    <button type="button" id="tab-has-meaning" class="filter-tab" onclick="setFilterTab('has')">
-                        意味あり <span id="count-has-meaning" class="tab-count">0</span>
-                    </button>
-                    <button type="button" id="tab-no-meaning" class="filter-tab" onclick="setFilterTab('none')">
-                        意味なし <span id="count-no-meaning" class="tab-count">0</span>
-                    </button>
                 </div>
 
                 <!-- 検索バー -->

@@ -13,7 +13,7 @@ let sheetLines = { uncategorized: [] }; // bookId -> array of raw lines
 // index.html では "all_books", "uncategorized", または book.id
 // edit.html では "uncategorized" または book.id（1枚の巨大シートではなく本ごとのシートで管理）
 let currentBookTab = sessionStorage.getItem("kuji_book_tab") || "all_books";
-let currentFilterTab = sessionStorage.getItem("kuji_filter_tab") || "all";
+let currentFilterTab = "all"; // 「すべて/意味あり/意味なし」UIは廃止。常に全件表示
 let hasUserSelectedTab = Boolean(sessionStorage.getItem("kuji_filter_tab"));
 
 let isDrawing = false;
@@ -1071,6 +1071,43 @@ function renderBookTabs() {
     });
 
     container.appendChild(fragment);
+    setupBookTabsCollapse(container);
+}
+
+// 本棚タグ一覧の折りたたみ（index.html のみ）
+var bookTabsExpanded = false;
+var bookTabsObserver = null;
+
+function setupBookTabsCollapse(container) {
+    var toggle = document.getElementById("book-tabs-toggle");
+    if (!toggle || isEditPage()) return;
+    if (!bookTabsObserver && typeof ResizeObserver !== "undefined") {
+        bookTabsObserver = new ResizeObserver(function() { updateBookTabsToggle(); });
+        bookTabsObserver.observe(container);
+    }
+    updateBookTabsToggle();
+}
+
+function updateBookTabsToggle() {
+    var container = document.getElementById("book-tabs");
+    var toggle = document.getElementById("book-tabs-toggle");
+    if (!container || !toggle) return;
+    var wasCollapsed = container.classList.contains("is-collapsed");
+    container.classList.add("is-collapsed");
+    var overflowing = container.scrollHeight > container.clientHeight + 1;
+    container.classList.toggle("is-collapsed", !bookTabsExpanded);
+    if (!overflowing && !bookTabsExpanded) {
+        toggle.style.display = "none";
+        return;
+    }
+    toggle.style.display = "";
+    toggle.textContent = bookTabsExpanded ? "折りたたむ" : "すべて表示";
+    toggle.setAttribute("aria-expanded", bookTabsExpanded ? "true" : "false");
+}
+
+function toggleBookTabsExpanded() {
+    bookTabsExpanded = !bookTabsExpanded;
+    updateBookTabsToggle();
 }
 
 // ISBNから表紙画像URLのみを取得（openBD → Google Books の順。画像ファイル自体は保存しない）
@@ -2176,18 +2213,13 @@ function createWordCardElement(item) {
         }
     }
 
-    var delBtn = document.createElement("button");
-    delBtn.type = "button";
-    delBtn.className = "btn-card-action btn-card-delete";
-    delBtn.title = "削除";
-    delBtn.textContent = "×";
-    delBtn.addEventListener("click", function() {
-        deleteWordFromSheet(item.bookId, item.word);
-    });
-    actions.appendChild(delBtn);
-
     top.appendChild(actions);
     card.appendChild(top);
+
+    var sourceTag = document.createElement("div");
+    sourceTag.className = "word-source";
+    sourceTag.textContent = getBookTitleById(item.bookId);
+    card.appendChild(sourceTag);
 
     if (isEditing) {
         var editBox = document.createElement("div");
@@ -2278,6 +2310,15 @@ function createWordCardElement(item) {
             showInlineDictionaryCandidates(item.id, currentWordVal);
         });
         btns.appendChild(dictBtn);
+
+        var delBtn = document.createElement("button");
+        delBtn.type = "button";
+        delBtn.className = "btn-inline-delete";
+        delBtn.textContent = "削除";
+        delBtn.addEventListener("click", function() {
+            deleteWordFromSheet(item.bookId, item.word);
+        });
+        btns.appendChild(delBtn);
 
         var cancelBtn = document.createElement("button");
         cancelBtn.type = "button";
@@ -2650,9 +2691,7 @@ function clearAllWords() {
 // ==================== ⑫ 重複なしランダムピックアップ（山札シャッフル方式） ====================
 
 function getActiveDrawPool() {
-    if (currentBookTab !== "all_books") {
-        return wordList.filter(function(w) { return w.bookId === currentBookTab; });
-    }
+    // 選択中のシートに関わらず、常に全登録単語から抽選
     return wordList;
 }
 
@@ -2678,7 +2717,7 @@ function buildShuffledDeck(pool) {
 }
 
 function syncDrawDeckWithPool(pool) {
-    var sig = currentBookTab + "|" + pool.map(function(w) { return w.bookId + ":" + w.word; }).join(",");
+    var sig = pool.map(function(w) { return w.bookId + ":" + w.word; }).join(",");
     var validSet = {};
     pool.forEach(function(w) {
         validSet[w.bookId + "::" + w.word] = w;
@@ -2701,15 +2740,10 @@ function syncDrawDeckWithPool(pool) {
 }
 
 function updateDrawDeckInfo() {
-    var infoElem = document.getElementById("draw-deck-info");
-    if (!infoElem) return;
+    // 残り回数の表示は廃止。山札（一巡するまで重複しない）の同期のみ行う
     var pool = getActiveDrawPool();
-    if (pool.length === 0) {
-        infoElem.textContent = "";
-        return;
-    }
+    if (pool.length === 0) return;
     syncDrawDeckWithPool(pool);
-    infoElem.textContent = "一巡まで残り " + drawDeck.length + " / " + pool.length;
 }
 
 function drawWord() {
@@ -2718,7 +2752,7 @@ function drawWord() {
     syncWordList();
     var pool = getActiveDrawPool();
     if (pool.length === 0) {
-        alert("このシートには単語が登録されていません。「単語を登録・編集」から単語を入力してください！");
+        alert("単語が登録されていません。「単語を登録・編集」から単語を入力してください！");
         return;
     }
 
@@ -2763,6 +2797,8 @@ function drawWord() {
         var tempIndex = Math.floor(Math.random() * pool.length);
         resultWord.innerText = pool[tempIndex].word;
         resultMeaning.innerText = "";
+        var srcElem = document.getElementById("result-source");
+        if (srcElem) srcElem.style.display = "none";
         shuffleCount++;
 
         if (shuffleCount >= maxShuffles) {
@@ -2791,5 +2827,10 @@ function setDrawResult(selected) {
     } else {
         resultMeaning.innerText = "";
         resultMeaning.style.display = "none";
+    }
+    var resultSource = document.getElementById("result-source");
+    if (resultSource) {
+        resultSource.textContent = getBookTitleById(selected.bookId);
+        resultSource.style.display = "";
     }
 }
