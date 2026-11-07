@@ -55,25 +55,6 @@ Googleアカウントでのクラウドリアルタイム同期に対応して�
 
 ---
 
-## 💻 ローカル開発・確認方法
-
-本アプリはビルド不要の静的Webアプリケーションです。
-
-1. リポジトリをクローンします:
-   ```bash
-   git clone https://github.com/subaru-1364/jinsei-tango.git
-   cd jinsei-tango
-   ```
-2. ローカルサーバーを起動するか、ブラウザで `index.html` を直接開きます:
-   ```bash
-   # 例: Pythonのビルトインサーバーを使用する場合
-   python3 -m http.server 8000
-   ```
-3. `http://localhost:8000/` にアクセスします。
-   - ※ローカル環境（`localhost` / `127.0.0.1` / `file://`）では、Googleログインをスキップして即座に画面を確認できる「ローカル確認モード」が利用可能です。
-
----
-
 ## 📄 クレジット・ライセンス
 
 - **単語の意味**: [Wiktionary](https://ja.wiktionary.org/) / [Wikipedia](https://ja.wikipedia.org/) ([CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/deed.ja))
