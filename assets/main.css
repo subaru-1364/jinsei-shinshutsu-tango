@@ -121,6 +121,14 @@ body {
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.book-shelf-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-left: auto;
 }
 
 .btn-isbn-toggle {
@@ -138,6 +146,16 @@ body {
 
 .btn-isbn-toggle:hover {
     background: #e7e5de;
+}
+
+.btn-book-reorder.active {
+    background: var(--primary-color);
+    color: #ffffff;
+    border-color: var(--primary-color);
+}
+
+.btn-book-reorder.active:hover {
+    background: var(--primary-hover);
 }
 
 .isbn-panel {
@@ -305,6 +323,26 @@ body {
     color: #ffffff;
 }
 
+.book-tab[draggable="true"] {
+    cursor: grab;
+}
+
+.book-tab[draggable="true"]:active {
+    cursor: grabbing;
+}
+
+.book-tab.is-dragging {
+    opacity: 0.45;
+}
+
+.book-tab.drag-over-left {
+    box-shadow: -3px 0 0 0 var(--accent-vermilion);
+}
+
+.book-tab.drag-over-right {
+    box-shadow: 3px 0 0 0 var(--accent-vermilion);
+}
+
 /* 50単語達成マイルストーン通知バナー */
 .milestone-banner {
     display: flex;
@@ -402,6 +440,7 @@ body {
     align-items: center;
     justify-content: space-between;
     gap: 0.6rem;
+    flex-wrap: wrap;
     padding-top: 0.45rem;
     border-top: 1px dashed #e2e0d8;
     font-size: 0.78rem;
@@ -413,6 +452,40 @@ body {
     align-items: center;
     gap: 0.6rem;
     min-width: 0;
+    flex: 1;
+}
+
+.book-meta-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.btn-book-move {
+    background: #f4f3ef;
+    border: 1px solid #d4d2c8;
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.12rem 0.45rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+}
+
+.btn-book-move:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: #eae8e0;
+    border-color: var(--text-primary);
+}
+
+.btn-book-move:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
 }
 
 .book-cover-thumb {

@@ -1216,16 +1216,116 @@ function deleteCurrentBook() {
     refreshUI();
 }
 
+var draggedBookTabId = null;
+var isBookReorderMode = false;
+
+function toggleBookReorderMode() {
+    if (bookList.length <= 1) {
+        isBookReorderMode = false;
+    } else {
+        isBookReorderMode = !isBookReorderMode;
+    }
+    if (isBookReorderMode && bookList.length > 0) {
+        var activeId = isEditPage() ? getEffectiveBookIdForEdit() : currentBookTab;
+        if (activeId === "all_books" || activeId === "uncategorized") {
+            selectBookTab(bookList[0].id);
+            return;
+        }
+    }
+    renderBookTabs();
+    renderActiveBookMeta();
+}
+
+function moveBookOrder(bookId, direction) {
+    var idx = -1;
+    for (var i = 0; i < bookList.length; i++) {
+        if (bookList[i].id === bookId) {
+            idx = i;
+            break;
+        }
+    }
+    if (idx === -1) return;
+    var targetIdx = idx + direction;
+    if (targetIdx < 0 || targetIdx >= bookList.length) return;
+
+    if (isEditPage()) {
+        collectCurrentSheetLines();
+    }
+
+    var temp = bookList[idx];
+    bookList[idx] = bookList[targetIdx];
+    bookList[targetIdx] = temp;
+
+    editingWordId = null;
+    saveAllSheets(false);
+    refreshUI();
+}
+
+function reorderBookTab(sourceId, targetId, insertAfter) {
+    if (!sourceId || !targetId || sourceId === targetId) return;
+    var srcIdx = -1;
+    var tgtIdx = -1;
+    for (var i = 0; i < bookList.length; i++) {
+        if (bookList[i].id === sourceId) srcIdx = i;
+        if (bookList[i].id === targetId) tgtIdx = i;
+    }
+    if (srcIdx === -1 || tgtIdx === -1) return;
+
+    if (isEditPage()) {
+        collectCurrentSheetLines();
+    }
+
+    var movedBook = bookList.splice(srcIdx, 1)[0];
+    var newTgtIdx = -1;
+    for (var j = 0; j < bookList.length; j++) {
+        if (bookList[j].id === targetId) {
+            newTgtIdx = j;
+            break;
+        }
+    }
+    if (newTgtIdx === -1) {
+        bookList.splice(srcIdx, 0, movedBook);
+        return;
+    }
+    var insertIdx = insertAfter ? (newTgtIdx + 1) : newTgtIdx;
+    if (insertIdx === srcIdx) {
+        bookList.splice(srcIdx, 0, movedBook);
+        return;
+    }
+    bookList.splice(insertIdx, 0, movedBook);
+
+    editingWordId = null;
+    saveAllSheets(false);
+    refreshUI();
+}
+
 function renderBookTabs() {
     var container = document.getElementById("book-tabs");
     if (!container) return;
 
+    if (bookList.length <= 1 && isBookReorderMode) {
+        isBookReorderMode = false;
+    }
+
+    var reorderBtn = document.getElementById("book-reorder-btn");
+    if (reorderBtn) {
+        if (bookList.length > 1) {
+            reorderBtn.style.display = "inline-flex";
+            reorderBtn.textContent = isBookReorderMode ? "✓ 並び替え完了" : "並び替え";
+            reorderBtn.classList.toggle("active", isBookReorderMode);
+        } else {
+            reorderBtn.style.display = "none";
+            reorderBtn.classList.remove("active");
+        }
+    }
+
+    container.classList.toggle("is-reordering", isBookReorderMode);
     container.textContent = "";
     var fragment = document.createDocumentFragment();
     var editMode = isEditPage();
     var activeTabId = editMode ? getEffectiveBookIdForEdit() : currentBookTab;
 
-    function createTabButton(id, titleText, count) {
+    function createTabButton(id, titleText, count, isDraggableBook) {
         var btn = document.createElement("button");
         btn.type = "button";
         btn.className = (activeTabId === id) ? "book-tab active" : "book-tab";
@@ -1244,22 +1344,73 @@ function renderBookTabs() {
         btn.addEventListener("click", function() {
             selectBookTab(id);
         });
+
+        if (isDraggableBook && isBookReorderMode) {
+            btn.draggable = true;
+            btn.setAttribute("data-book-id", id);
+
+            btn.addEventListener("dragstart", function(e) {
+                draggedBookTabId = id;
+                btn.classList.add("is-dragging");
+                if (e.dataTransfer) {
+                    e.dataTransfer.effectAllowed = "move";
+                    try {
+                        e.dataTransfer.setData("text/plain", id);
+                    } catch (err) {}
+                }
+            });
+
+            btn.addEventListener("dragover", function(e) {
+                if (!draggedBookTabId || draggedBookTabId === id) return;
+                e.preventDefault();
+                if (e.dataTransfer) {
+                    e.dataTransfer.dropEffect = "move";
+                }
+                var rect = btn.getBoundingClientRect();
+                var isRightHalf = (e.clientX - rect.left) > (rect.width / 2);
+                btn.classList.toggle("drag-over-left", !isRightHalf);
+                btn.classList.toggle("drag-over-right", isRightHalf);
+            });
+
+            btn.addEventListener("dragleave", function() {
+                btn.classList.remove("drag-over-left", "drag-over-right");
+            });
+
+            btn.addEventListener("drop", function(e) {
+                e.preventDefault();
+                var isRightHalf = btn.classList.contains("drag-over-right");
+                btn.classList.remove("drag-over-left", "drag-over-right");
+                var sourceId = draggedBookTabId;
+                draggedBookTabId = null;
+                if (!sourceId || sourceId === id) return;
+                reorderBookTab(sourceId, id, isRightHalf);
+            });
+
+            btn.addEventListener("dragend", function() {
+                draggedBookTabId = null;
+                var allTabs = container.querySelectorAll(".book-tab");
+                for (var i = 0; i < allTabs.length; i++) {
+                    allTabs[i].classList.remove("is-dragging", "drag-over-left", "drag-over-right");
+                }
+            });
+        }
+
         return btn;
     }
 
-    // index.html では「すべての本」タブを表示
+    // index.html では「すべての本」タブを先頭に固定表示
     if (!editMode) {
-        fragment.appendChild(createTabButton("all_books", "すべて", wordList.length));
+        fragment.appendChild(createTabButton("all_books", "すべて", wordList.length, false));
     }
 
-    // 「未分類」タブ
+    // 「未分類」タブを先頭（すべての次）に固定表示
     var uncatCount = wordList.filter(function(w) { return w.bookId === "uncategorized"; }).length;
-    fragment.appendChild(createTabButton("uncategorized", "未分類", uncatCount));
+    fragment.appendChild(createTabButton("uncategorized", "未分類", uncatCount, false));
 
     // 各書籍タブ
     bookList.forEach(function(book) {
         var bCount = wordList.filter(function(w) { return w.bookId === book.id; }).length;
-        fragment.appendChild(createTabButton(book.id, book.title, bCount));
+        fragment.appendChild(createTabButton(book.id, book.title, bCount, true));
     });
 
     container.appendChild(fragment);
@@ -1284,6 +1435,11 @@ function updateBookTabsToggle() {
     var container = document.getElementById("book-tabs");
     var toggle = document.getElementById("book-tabs-toggle");
     if (!container || !toggle) return;
+    if (isBookReorderMode) {
+        container.classList.remove("is-collapsed");
+        toggle.style.display = "none";
+        return;
+    }
     var wasCollapsed = container.classList.contains("is-collapsed");
     container.classList.add("is-collapsed");
     var overflowing = container.scrollHeight > container.clientHeight + 1;
@@ -1381,6 +1537,41 @@ function renderActiveBookMeta() {
 
     metaBox.appendChild(leftGroup);
 
+    var rightGroup = document.createElement("div");
+    rightGroup.className = "book-meta-actions";
+
+    var bookIdx = -1;
+    for (var i = 0; i < bookList.length; i++) {
+        if (bookList[i].id === book.id) {
+            bookIdx = i;
+            break;
+        }
+    }
+
+    if (isBookReorderMode && bookIdx !== -1) {
+        var moveLeftBtn = document.createElement("button");
+        moveLeftBtn.type = "button";
+        moveLeftBtn.className = "btn-book-move";
+        moveLeftBtn.textContent = "← 左へ移動";
+        moveLeftBtn.title = "このシートの並び順を1つ左へ移動";
+        moveLeftBtn.disabled = (bookIdx <= 0);
+        moveLeftBtn.addEventListener("click", function() {
+            moveBookOrder(book.id, -1);
+        });
+        rightGroup.appendChild(moveLeftBtn);
+
+        var moveRightBtn = document.createElement("button");
+        moveRightBtn.type = "button";
+        moveRightBtn.className = "btn-book-move";
+        moveRightBtn.textContent = "右へ移動 →";
+        moveRightBtn.title = "このシートの並び順を1つ右へ移動";
+        moveRightBtn.disabled = (bookIdx >= bookList.length - 1);
+        moveRightBtn.addEventListener("click", function() {
+            moveBookOrder(book.id, 1);
+        });
+        rightGroup.appendChild(moveRightBtn);
+    }
+
     var delBookBtn = document.createElement("button");
     delBookBtn.type = "button";
     delBookBtn.className = "btn-book-remove";
@@ -1388,7 +1579,9 @@ function renderActiveBookMeta() {
     delBookBtn.addEventListener("click", function() {
         deleteCurrentBook();
     });
-    metaBox.appendChild(delBookBtn);
+    rightGroup.appendChild(delBookBtn);
+
+    metaBox.appendChild(rightGroup);
 }
 
 // ==================== Wiktionary / Wikipedia 意味の自動取得 ====================
